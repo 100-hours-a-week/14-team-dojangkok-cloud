@@ -1,6 +1,6 @@
 ---
-name: FE-Todo-Template
-about: 프론트엔드 Todo 템플릿
+name: Cloud-Todo-Template
+about: 클라우드 Todo 템플릿
 title: ''
 labels: ''
 assignees: ''
