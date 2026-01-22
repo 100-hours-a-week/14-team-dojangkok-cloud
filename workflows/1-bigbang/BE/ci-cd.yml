@@ -1,0 +1,88 @@
+# 정의할 워크 플로우의 이름
+name: Dojangkok Server CI/CD
+
+# 워크플로우를 실행할 이벤트 결정 및 매핑
+on:
+  push:
+    branches: [dev,main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [dev,main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+# 실행할 작업을 정의
+jobs:
+  test-and-build: # 테스트를 수행하는 단계
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 소스코드 체크아웃
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+      # 2. Java 21 런타임 설정
+      - name: Set up Java Runtime
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+          cache: 'gradle'
+      # 3. gradlew 실행 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      # 4. 테스트 수행
+      - name: Run tests
+        run: ./gradlew test --no-daemon -x test # 백엔드 쪽 리소스 준비될때까지는 생략
+      # 5. JAR 파일 빌드 (테스트를 선행하였으므로 바로 빌드 수행)
+      - name: Build JAR
+        run: ./gradlew bootJar --no-daemon -x test
+      # 6. 빌드된 JAR 파일을 아티팩트로 업로드
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: dojangkok-server-jar
+          path: build/libs/*.jar
+          retention-days: 7
+  deploy: # 빌드 파일을 가지고 배포를 수행하는 단계
+    if: github.ref == 'refs/heads/main'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 빌드한 JAR 아티펙트 다운로드
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: dojangkok-server-jar
+          path: build/libs
+      # 2. 대상 서버 SSH 접속을 위한 .pem Key 생성
+      - name: Create PEM key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ./key.pem
+          chmod 600 ./key.pem
+      # 3. 대상 서버로 아티펙트 파일 전송 및 실행
+      - name: Deploy to Target Server
+        env:
+          TARGET_IP: ${{ secrets.TARGET_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          REMOTE_DIR: "/home/${{ secrets.SSH_USER }}/server"
+          JAR_NAME: "dojangkok-server.jar"
+        run: |
+          echo "JAR 파일 전송..."
+          scp -i ./key.pem -o StrictHostKeyChecking=no build/libs/*.jar $SSH_USER@$TARGET_IP:$REMOTE_DIR/$JAR_NAME
+          echo "배포 시작..."
+          ssh -i ./key.pem -o StrictHostKeyChecking=no $SSH_USER@$TARGET_IP << EOF
+            set -e
+            cd $REMOTE_DIR
+            aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/backend/application.yaml ./application.yaml
+            echo "Systemd 서비스 재시작..."
+            sudo systemctl restart dojangkok-server
+            echo "상태 확인..."
+            sleep 10
+            sudo systemctl status dojangkok-server --no-pager
+          EOF
+          rm -f ./key.pem

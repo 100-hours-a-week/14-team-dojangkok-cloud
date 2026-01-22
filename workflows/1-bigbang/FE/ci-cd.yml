@@ -1,0 +1,135 @@
+# 정의할 워크 플로우의 이름
+name: Dojangkok Client CI/CD
+
+# 워크플로우를 실행할 이벤트 결정 및 매핑
+on:
+  push:
+    branches: [dev,main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [dev,main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+# 실행할 작업을 정의
+jobs:
+  test: # 테스트를 수행하는 단계
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x]
+    steps:
+      # 1. 소스코드를 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      # 2. Node.js 환경 설정
+      - name: Set up Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      # 3. 프로젝트의 의존성 패키지들을 설치
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+      # 4. Formatting 체크
+      - name: Check Formatting
+        run: npx prettier --check .
+      # 4. Lint
+      - name: Run Lint
+        run: npm run lint
+      # 5. 프로젝트의 테스트를 실행
+      - name: Run tests
+        run: npm run test:run || true
+  build: # 빌드를 수행하는 단계
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x]
+    steps:
+      # 1. 소스코드를 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      # 2. Node.js 환경 설정
+      - name: Set up Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      # 3. 프로젝트의 의존성 패키지들을 설치
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+      # 4. AWS 자격증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # 5. 환경변수 파일 다운로드
+      - name: Download .env from S3
+        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/.env ./.env
+      # 6. Next.js 앱 빌드
+      - name: Build Next.js App
+        run: npm run build
+      # 7. 빌드 결과 압축
+      - name: Compress Build Artifact
+        run: tar -czf build.tar.gz .next public package.json package-lock.json next.config.ts ecosystem.config.js
+      # 8. 빌드 결과 Artifact 업로드
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-artifact
+          path: build.tar.gz
+          retention-days: 7
+  deploy: # 배포를 수행하는 단계
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 빌드 아티팩트(압축파일) 다운로드
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: build-artifact
+          path: dist
+      # 2. SSH 키 생성
+      - name: Create PEM key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ./key.pem
+          chmod 600 ./key.pem
+      # 3. 서버 배포 수행
+      - name: Deploy to Target Server
+        env:
+          TARGET_IP: ${{ secrets.TARGET_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          REMOTE_DIR: '/home/${{ secrets.SSH_USER }}/client'
+        run: |
+          ssh -i ./key.pem -o StrictHostKeyChecking=no $SSH_USER@$TARGET_IP "mkdir -p $REMOTE_DIR"
+          echo "빌드 파일 전송 중..."
+          scp -i ./key.pem -o StrictHostKeyChecking=no dist/build.tar.gz $SSH_USER@$TARGET_IP:$REMOTE_DIR/
+          echo "배포 스크립트 실행 중..."
+          ssh -i ./key.pem -o StrictHostKeyChecking=no $SSH_USER@$TARGET_IP << EOF
+            set -e
+            cd $REMOTE_DIR
+            echo "기존 빌드 파일 정리 중..."
+            rm -rf .next public package.json package-lock.json next.config.ts ecosystem.config.js
+            echo "압축 해제 중..."
+            tar -xzf build.tar.gz
+            rm build.tar.gz
+            echo "환경변수 다운로드 중..."
+            aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/.env ./.env
+            echo "의존성 설치 중 (Production)..."
+            npm ci --production --ignore-scripts
+            echo "서비스 재시작 중..."
+            pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+            pm2 save
+            echo "배포 성공"
+          EOF
+          rm -f ./key.pem
