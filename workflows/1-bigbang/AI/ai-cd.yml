@@ -14,11 +14,11 @@ on:
   workflow_dispatch:
 
 env:
-  GCP_PROJECT_ID: "fiery-topic-483322-b2"
-  GCP_ZONE: "asia-northeast3-b"
-  GCP_INSTANCE: "ai-server"
-  WORKLOAD_IDENTITY_PROVIDER: "projects/7174586152/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
-  SERVICE_ACCOUNT: "github-actions-sa@fiery-topic-483322-b2.iam.gserviceaccount.com"
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_ZONE: ${{ secrets.GCP_ZONE }}
+  GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+  SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
 jobs:
   deploy:
