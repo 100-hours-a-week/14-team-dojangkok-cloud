@@ -4,13 +4,13 @@ name: Dojangkok Server CI/CD
 # 워크플로우를 실행할 이벤트 결정 및 매핑
 on:
   push:
-    branches: [dev,main]
+    branches: [dev, main]
     paths-ignore:
       - '.github/workflows/**'
       - '**.md'
       - 'docs/**'
   pull_request:
-    branches: [dev,main]
+    branches: [dev, main]
     paths-ignore:
       - '.github/workflows/**'
       - '**.md'
@@ -53,18 +53,37 @@ jobs:
     needs: test-and-build
     runs-on: ubuntu-latest
     steps:
-      # 1. 빌드한 JAR 아티펙트 다운로드
+      # 0. Github Action Runner IP 획득
+      - name: Get GitHub Actions Runner IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+      # 1. AWS 자격증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # 2. Github Action Runner IP 를 보안그룹에 임시허용
+      - name: Add GitHub IP to Security Group
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.AWS_SG_ID }} \
+            --protocol tcp --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32 \
+            --tag-specifications 'ResourceType=security-group-rule,Tags=[{Key=Name,Value=GithubActions}]' || true
+      # 3. 빌드한 JAR 아티펙트 다운로드
       - name: Download JAR Artifact
         uses: actions/download-artifact@v6
         with:
           name: dojangkok-server-jar
           path: build/libs
-      # 2. 대상 서버 SSH 접속을 위한 .pem Key 생성
+      # 4. 대상 서버 SSH 접속을 위한 .pem Key 생성
       - name: Create PEM key
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ./key.pem
           chmod 600 ./key.pem
-      # 3. 대상 서버로 아티펙트 파일 전송 및 실행
+      # 5. 대상 서버로 아티펙트 파일 전송 및 실행
       - name: Deploy to Target Server
         env:
           TARGET_IP: ${{ secrets.TARGET_IP }}
@@ -86,3 +105,11 @@ jobs:
             sudo systemctl status dojangkok-server --no-pager
           EOF
           rm -f ./key.pem
+      # 6. Github Action Runner IP 임시허용 해제
+      - name: Revoke GitHub IP from Security Group
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.AWS_SG_ID }} \
+            --protocol tcp --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32 || true
