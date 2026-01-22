@@ -4,13 +4,13 @@ name: Dojangkok Client CI/CD
 # 워크플로우를 실행할 이벤트 결정 및 매핑
 on:
   push:
-    branches: [dev,main]
+    branches: [dev, main]
     paths-ignore:
       - '.github/workflows/**'
       - '**.md'
       - 'docs/**'
   pull_request:
-    branches: [dev,main]
+    branches: [dev, main]
     paths-ignore:
       - '.github/workflows/**'
       - '**.md'
@@ -93,18 +93,37 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      # 1. 빌드 아티팩트(압축파일) 다운로드
+      # 0. Github Action Runner IP 획득
+      - name: Get GitHub Actions Runner IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
+      # 1. AWS 자격증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # 2. Github Action Runner IP 를 보안그룹에 임시허용
+      - name: Add GitHub IP to Security Group
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.AWS_SG_ID }} \
+            --protocol tcp --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32 \
+            --tag-specifications 'ResourceType=security-group-rule,Tags=[{Key=Name,Value=GithubActions}]' || true
+      # 3. 빌드 아티팩트(압축파일) 다운로드
       - name: Download Build Artifact
         uses: actions/download-artifact@v6
         with:
           name: build-artifact
           path: dist
-      # 2. SSH 키 생성
+      # 4. SSH 키 생성
       - name: Create PEM key
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ./key.pem
           chmod 600 ./key.pem
-      # 3. 서버 배포 수행
+      # 5. 서버 배포 수행
       - name: Deploy to Target Server
         env:
           TARGET_IP: ${{ secrets.TARGET_IP }}
@@ -133,3 +152,11 @@ jobs:
             echo "배포 성공"
           EOF
           rm -f ./key.pem
+      # 6. Github Action Runner IP 임시허용 해제
+      - name: Revoke GitHub IP from Security Group
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.AWS_SG_ID }} \
+            --protocol tcp --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32 || true
