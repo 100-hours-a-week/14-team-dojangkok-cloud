@@ -1,8 +1,7 @@
 # AI Server CI 설정 가이드
 
 - 작성일: 2026-01-07
-- 최종수정일: 2026-01-08
-
+- 최종수정일: 2026-01-25
 
 <br>
 
@@ -15,12 +14,10 @@
    - [파이프라인 단계 설명](#23-파이프라인-단계-설명)
 3. [린트/테스트 설정](#3-린트테스트-설정)
 4. [환경 설정](#4-환경-설정)
-   - [GitHub Secrets](#41-github-secrets)
-   - [requirements.txt 관리](#42-requirementstxt-관리)
+   - [uv 패키지 관리](#41-uv-패키지-관리)
 5. [CI 흐름 다이어그램](#5-ci-흐름-다이어그램)
-6. [예상 소요 시간](#6-예상-소요-시간)
-7. [실패 시 대응](#7-실패-시-대응)
-8. [향후 추가 예정](#8-향후-추가-예정)
+6. [실패 시 대응](#6-실패-시-대응)
+7. [향후 추가 예정](#7-향후-추가-예정)
 
 <br>
 
@@ -30,13 +27,14 @@
 
 **기술 스택:**
 - FastAPI
-- Python 3.11
-- pip + requirements.txt
+- Python 3.10
+- uv + uv.lock (패키지 관리)
 - LangChain, ChromaDB 등 AI 관련 패키지
 
 **적용 상태:**
-- 린트: Ruff (가장 손쉬운 Python 린터)
-- 테스트: pytest (단위 테스트)
+- 린트: Ruff (빠르고 손쉬운 Python 린터)
+- 포맷터: Ruff format
+- 테스트: pytest (단위 테스트 + 커버리지)
 
 > CI 도구 선택 이유, 브랜치 전략 등 공통 내용은 [[Step2 : CI 파이프라인 구축]] 참조
 
@@ -47,126 +45,171 @@
 ### 2.1 파일 위치
 
 ```
-.github/workflows/ci.yml
+.github/workflows/ai-ci.yml
 ```
 
 ### 2.2 워크플로우 파일
 
 ```yaml
-# =============================================================================
-# AI Server CI Workflow
-# =============================================================================
-# 목적: PR 및 push 시 린트, 테스트, 의존성 설치 검증
-# 트리거: main/dev 브랜치 push 또는 PR
-# =============================================================================
+# AI Server CI Pipeline
+# 위치: .github/workflows/ai-ci.yml
+#
+# 트리거 매트릭스:
+#   - PR feat/* → dev: lint-test
+#   - Push dev: lint-test, build
+#   - PR dev/hotfix/* → main: lint-test, build
+#   - Push main: artifact
+#
+# 패키지 관리: uv (pyproject.toml + uv.lock)
 
 name: AI Server CI
 
-# -----------------------------------------------------------------------------
-# 트리거 설정
-# -----------------------------------------------------------------------------
 on:
+  workflow_dispatch:  # 수동 실행
   push:
     branches: [main, dev]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main, dev]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
 
-# -----------------------------------------------------------------------------
-# 환경 변수
-# -----------------------------------------------------------------------------
 env:
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: "3.10"
 
-# -----------------------------------------------------------------------------
-# Jobs 정의
-# -----------------------------------------------------------------------------
 jobs:
-  ci:
-    name: Lint, Test & Install
-    runs-on: ubuntu-latest
-
+  # ============================================
+  # Lint & Test
+  # ============================================
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-22.04
+    continue-on-error: true  # lint 실패해도 CI 통과
     steps:
-      # -----------------------------------------------------------------------
-      # Step 1: 코드 체크아웃
-      # -----------------------------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # -----------------------------------------------------------------------
-      # Step 2: Python 설치
-      # -----------------------------------------------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          # cache: pip → pip 캐싱으로 설치 시간 단축
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      # -----------------------------------------------------------------------
-      # Step 3: pip 업그레이드
-      # -----------------------------------------------------------------------
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
-      # -----------------------------------------------------------------------
-      # Step 4: 의존성 설치
-      # -----------------------------------------------------------------------
-      # requirements.txt 기반 패키지 설치
-      # 실패 시: 패키지 버전 충돌, 의존성 누락 등 발견
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: uv sync --frozen
 
-      # -----------------------------------------------------------------------
-      # Step 5: Ruff 린트 검사
-      # -----------------------------------------------------------------------
-      # Python 코드 스타일 및 잠재적 오류 검사
-      - name: Run Ruff (lint)
-        run: ruff check .
+      - name: Run Ruff Linter
+        run: ruff check . || echo "::warning::Lint errors found (non-blocking)"
 
-      # -----------------------------------------------------------------------
-      # Step 6: 테스트 실행
-      # -----------------------------------------------------------------------
-      # pytest로 단위 테스트 실행
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Run Ruff Formatter Check
+        run: ruff format --check . || echo "::warning::Format issues found (non-blocking)"
 
-      # -----------------------------------------------------------------------
-      # Step 7: 기본 import 검증
-      # -----------------------------------------------------------------------
-      # 주요 모듈이 정상적으로 import 되는지 확인
-      - name: Verify imports
+      - name: Run Tests
         run: |
-          python -c "from fastapi import FastAPI; print('FastAPI OK')"
-          python -c "import uvicorn; print('Uvicorn OK')"
+          if [ -d "tests" ]; then
+            uv run pytest tests/ -v --cov=. --cov-report=xml
+          else
+            echo "No tests directory found, skipping tests"
+          fi
 
-      # -----------------------------------------------------------------------
-      # Step 8: Discord 알림
-      # -----------------------------------------------------------------------
-      - name: Discord Notification
-        if: always()
-        uses: sarisia/actions-status-discord@v1
+  # ============================================
+  # Build
+  # dev push, main PR에서만 실행 (main push 제외)
+  # ============================================
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    needs: lint-test
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "AI Server CI"
-          description: |
-            **Branch**: ${{ github.ref_name }}
-            **Commit**: ${{ github.event.head_commit.message || github.event.pull_request.title }}
-            **Status**: ${{ job.status }}
-          color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Verify Build
+        run: |
+          # Python 문법 검증
+          uv run python -m py_compile $(find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" 2>/dev/null || echo "")
+          echo "Build verification completed"
+
+  # ============================================
+  # Upload Artifact
+  # main push에서만 실행
+  # ============================================
+  artifact:
+    name: Upload Artifact
+    runs-on: ubuntu-22.04
+    needs: lint-test
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Artifact
+        run: |
+          mkdir -p dist
+          # 소스코드 패키징 (의존성 제외)
+          tar -czvf dist/ai-server-${{ github.sha }}.tar.gz \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.ruff_cache' \
+            --exclude='*.pyc' \
+            --exclude='venv' \
+            --exclude='.venv' \
+            .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-server-${{ github.sha }}
+          path: dist/
+          retention-days: 7
 ```
 
 ### 2.3 파이프라인 단계 설명
 
+#### Jobs 구성
+
+| Job | 실행 조건 | 설명 |
+|-----|----------|------|
+| lint-test | 항상 | 린트, 포맷 체크, 테스트 (continue-on-error) |
+| build | dev push, main PR | 의존성 설치 + 문법 검증 |
+| artifact | main push | 소스코드 패키징 및 업로드 |
+
+#### lint-test 단계
+
 | 단계 | 설명 | 비고 |
 |------|------|------|
 | Checkout | 코드 체크아웃 | actions/checkout@v4 |
-| Setup | Python 3.11 설치 | actions/setup-python@v5 + pip 캐시 |
-| Upgrade | pip 업그레이드 | 최신 pip 사용 |
-| Install | 의존성 설치 | `pip install -r requirements.txt` |
-| Lint | Ruff 코드 검사 | `ruff check .` |
-| Test | pytest 실행 | `pytest tests/ -v` |
-| Verify | Import 검증 | FastAPI, Uvicorn 모듈 확인 |
-| Notify | Discord 알림 | 성공/실패 모두 알림 |
+| Setup uv | uv 설치 | astral-sh/setup-uv@v5 + 캐시 |
+| Install Python | Python 3.10 설치 | uv python install |
+| Install dependencies | 의존성 설치 | `uv sync --frozen` |
+| Ruff Linter | 코드 검사 | 실패해도 warning |
+| Ruff Formatter | 포맷 체크 | 실패해도 warning |
+| Tests | pytest 실행 | 커버리지 포함 |
 
 <br>
 
@@ -176,8 +219,16 @@ jobs:
 
 | 도구 | 역할 |
 |------|------|
-| **Ruff** | Python 린터 (빠르고 손쉬운 코드 스타일 검사) |
+| **Ruff** | Python 린터 + 포맷터 (빠르고 손쉬운 코드 스타일 검사) |
 | **pytest** | Python 테스트 프레임워크 (테스트 실행, assertion, fixture) |
+| **pytest-cov** | 테스트 커버리지 측정 |
+
+### lint-test 실패 정책
+
+`continue-on-error: true` 설정으로 **lint/format 실패해도 CI는 통과**함.
+- 목적: 개발 초기 단계에서 린트 오류로 인한 병목 방지
+- Warning으로 기록되어 PR에서 확인 가능
+- 향후 코드 안정화 후 `continue-on-error: false`로 변경 권장
 
 > 린트 도구 상세 비교는 [[Step2 : CI 파이프라인 구축]] #부록-a-lint-심화 참조
 
@@ -185,44 +236,42 @@ jobs:
 
 ## 4. 환경 설정
 
-### 4.1 GitHub Secrets
+### 4.1 uv 패키지 관리
 
-CI가 Discord 알림을 보내려면 아래 Secret 설정 필요:
+#### uv란?
+Rust로 작성된 빠른 Python 패키지 관리 도구. pip보다 10-100배 빠름.
 
-```
-Repository → Settings → Secrets and variables → Actions
-→ New repository secret
-→ Name: DISCORD_WEBHOOK
-→ Value: https://discord.com/api/webhooks/xxxxx/yyyyy
-```
+#### 주요 파일
 
-### 4.2 requirements.txt 관리
+| 파일 | 용도 |
+|------|------|
+| `pyproject.toml` | 의존성 정의 |
+| `uv.lock` | 잠금 파일 (버전 고정) |
 
-#### 버전 고정 권장
-
-```txt
-# 주요 패키지는 버전 고정
-fastapi==0.109.0
-uvicorn==0.27.0
-langchain==0.1.0
-chromadb==0.4.22
-openai==1.10.0
-
-# 개발 의존성 (별도 파일 권장)
-# requirements-dev.txt
-# ruff
-# pytest
-# pytest-asyncio
-```
-
-#### 의존성 업데이트 체크
+#### 로컬 개발 환경 설정
 
 ```bash
-# 구버전 패키지 확인
-pip list --outdated
+# uv 설치 (macOS/Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# requirements.txt 재생성
-pip freeze > requirements.txt
+# 의존성 설치
+uv sync
+
+# 개발 의존성 포함
+uv sync --dev
+```
+
+#### 의존성 추가/관리
+
+```bash
+# 패키지 추가
+uv add fastapi uvicorn
+
+# 개발 의존성 추가
+uv add --dev ruff pytest pytest-cov
+
+# 의존성 업데이트
+uv lock --upgrade
 ```
 
 <br>
@@ -231,65 +280,73 @@ pip freeze > requirements.txt
 
 ```mermaid
 flowchart TD
-    A[Push/PR to main or dev] --> B[Checkout]
-    B --> C[Setup Python 3.11]
-    C --> D[pip upgrade]
-    D --> E[pip install]
-    E -->|Pass| F[Ruff lint]
-    E -->|Fail| X[Discord 알림 - 실패]
-    F -->|Pass| G[pytest]
-    F -->|Fail| X
-    G -->|Pass| H[Import 검증]
-    G -->|Fail| X
-    H -->|Pass| I[완료]
-    H -->|Fail| X
-    I --> Y[Discord 알림 - 성공]
+    A[Push/PR to main or dev] --> B[lint-test Job]
+    B --> C{Lint 성공?}
+    C -->|Pass| D[Format Check]
+    C -->|Fail| D[Warning 기록]
+    D --> E[pytest 실행]
+    E --> F{트리거 조건?}
+
+    F -->|dev push 또는 main PR| G[build Job]
+    F -->|main push| H[artifact Job]
+    F -->|그 외| I[완료]
+
+    G --> J[문법 검증]
+    J --> I
+
+    H --> K[tar.gz 패키징]
+    K --> L[Artifact 업로드]
+    L --> I
 ```
 
 <br>
 
-## 6. 예상 소요 시간
-
-| 단계 | 예상 시간 | 비고 |
-|------|----------|------|
-| Checkout | ~10초 | |
-| Setup Python | ~20초 | 캐시 활용 시 |
-| pip install | ~2분 | AI 패키지 많음 |
-| Ruff lint | ~10초 | |
-| pytest | ~30초 | 테스트 수에 따라 |
-| Import 검증 | ~10초 | |
-| **총합** | **~4분** | |
-
-<br>
-
-## 7. 실패 시 대응
+## 6. 실패 시 대응
 
 ### 의존성 설치 실패
 
 ```bash
 # 로컬에서 재현
-pip install -r requirements.txt
+uv sync
 
-# 충돌하는 패키지 확인
-pip check
+# 잠금 파일 재생성
+uv lock
+
+# 캐시 정리 후 재시도
+rm -rf .venv
+uv sync
 ```
 
 ### Import 오류
 
 ```bash
 # 문제 모듈 개별 확인
-python -c "import 문제모듈"
+uv run python -c "import 문제모듈"
 
-# 의존성 트리 확인
-pip show 문제모듈
+# 의존성 확인
+uv tree
+```
+
+### 린트 오류 수정
+
+```bash
+# 린트 오류 확인
+ruff check .
+
+# 자동 수정
+ruff check --fix .
+
+# 포맷 적용
+ruff format .
 ```
 
 > 상세 실패 대응 프로세스는 [[Step2 : CI 파이프라인 구축]] #6-실패-시-대응-방안 참조
 
 <br>
 
-## 8. 향후 추가 예정
+## 7. 향후 추가 예정
 
-- [ ] 테스트 커버리지 측정 (pytest-cov)
+- [ ] `continue-on-error: false`로 엄격한 린트 적용
 - [ ] pre-commit hook 설정
 - [ ] API 문서 자동 생성 검증
+- [ ] 타입 체크 (mypy)

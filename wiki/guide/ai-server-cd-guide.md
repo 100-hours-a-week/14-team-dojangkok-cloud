@@ -1,7 +1,7 @@
 # AI Server CD 설정 가이드
 
 - 작성일: 2026-01-08
-- 최종수정일: 2026-01-08
+- 최종수정일: 2026-01-25
 
 ## 목차
 
@@ -13,14 +13,13 @@
    - [전체 yml 파일](#전체-yml-파일)
 3. [GitHub Secrets 설정](#github-secrets-설정)
 4. [CD 흐름](#cd-흐름)
-5. [예상 소요 시간](#예상-소요-시간)
-   - [pip install 시간 변동성](#pip-install-시간-변동성)
+5. [주요 특징](#주요-특징)
+   - [Workload Identity Federation (OIDC)](#workload-identity-federation-oidc)
+   - [동적 방화벽 규칙](#동적-방화벽-규칙)
+   - [자동 롤백](#자동-롤백)
+   - [uv 패키지 관리](#uv-패키지-관리)
 6. [systemd 서비스 설정](#systemd-서비스-설정)
-   - [서비스 파일 예시](#서비스-파일-예시)
-   - [systemd 명령어](#systemd-명령어)
 7. [롤백 절차](#롤백-절차)
-   - [수동 롤백 방법](#수동-롤백-방법)
-   - [특정 버전으로 롤백](#특정-버전으로-롤백)
 8. [실패 시 대응](#실패-시-대응)
 9. [환경 변수 관리](#환경-변수-관리)
 10. [향후 계획](#향후-계획)
@@ -38,19 +37,21 @@
 | 항목 | 내용 |
 |------|------|
 | 프레임워크 | FastAPI |
-| 런타임 | Python 3.11 |
+| 런타임 | Python 3.10 |
+| 패키지 관리 | uv (uv.lock) |
 | 프로세스 관리 | systemd |
-| 인프라 |  GPU Instance |
+| 인프라 | GCP Compute Engine (GPU Instance) |
+| 인증 | Workload Identity Federation (OIDC) |
 
 
 ### 배포 방식 요약
 
 | 항목 | 내용 |
 |------|------|
-| 아티팩트 | 없음 (인터프리터 언어) |
-| 배포 방식 | git pull → pip install → 서비스 재시작 |
-| 다운타임 | ~30초 (서비스 재시작 시간) |
-| 롤백 방식 | git checkout (이전 커밋 복원) |
+| 아티팩트 | CI에서 생성된 tar.gz |
+| 배포 방식 | Artifact 다운로드 → uv sync → 서비스 재시작 |
+| 다운타임 | 서비스 재시작 시간 |
+| 롤백 방식 | 자동 (헬스체크 실패 시) + 수동 (backup 폴더 복원) |
 
 <br>
 
@@ -58,196 +59,218 @@
 
 ### 파일 위치
 ```
-.github/workflows/cd.yml
+.github/workflows/ai-cd.yml
 ```
 
 ### 전체 yml 파일
 
 ```yaml
-# =============================================================================
-# AI Server CD Workflow
-# =============================================================================
-# 목적: main 브랜치의 코드를 EC2 서버에 배포
-# 트리거: 수동 실행 (workflow_dispatch)
-# 특이사항: Python은 빌드 아티팩트 없이 git pull로 배포
-# =============================================================================
+# AI Server CD Pipeline
+# 위치: .github/workflows/ai-cd.yml
+#
+# 트리거: main 브랜치 PR 머지 (자동), 수동 (workflow_dispatch)
+# 인증: GCP Workload Identity Federation (OIDC)
+# 배포: In-place 배포 (VM 직접 업데이트)
+# 패키지 관리: uv (pyproject.toml + uv.lock)
 
 name: AI Server CD
 
-# -----------------------------------------------------------------------------
-# 트리거 설정 - 수동 실행만 허용
-# -----------------------------------------------------------------------------
 on:
+  pull_request:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: '배포를 진행하시겠습니까? (yes 입력)'
-        required: true
-        type: string
 
-# -----------------------------------------------------------------------------
-# 환경 변수
-# -----------------------------------------------------------------------------
 env:
-  APP_PATH: /app/ai-server
-  SERVICE_NAME: dojangkok-ai
-  VENV_PATH: /app/ai-server/venv
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_ZONE: ${{ secrets.GCP_ZONE }}
+  GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
+  WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+  SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-# -----------------------------------------------------------------------------
-# Jobs 정의
-# -----------------------------------------------------------------------------
 jobs:
   deploy:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'yes'
-
+    name: Deploy to GCP
+    runs-on: ubuntu-22.04
+    environment: 1-bigbang
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
     steps:
-      # -----------------------------------------------------------------------
-      # Step 1: 배포 시작 알림
-      # -----------------------------------------------------------------------
-      - name: Discord - Deploy Started
-        uses: sarisia/actions-status-discord@v1
+      - name: Authenticate to GCP (OIDC)
+        uses: google-github-actions/auth@v2
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "AI Server 배포 시작"
-          description: |
-            **Branch**: ${{ github.ref_name }}
-            **Triggered by**: ${{ github.actor }}
-            ⚠️ AI 기능이 잠시 중단됩니다.
-          color: 0xffaa00
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
 
-      # -----------------------------------------------------------------------
-      # Step 2: EC2에서 배포 실행
-      # -----------------------------------------------------------------------
-      - name: Deploy on EC2
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
         with:
-          host: ${{ secrets.AI_EC2_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-            echo "=== AI Server 배포 시작 ==="
+      - name: Get Runner IP
+        id: ip
+        run: echo "ip=$(curl -s ifconfig.me)" >> $GITHUB_OUTPUT
 
-            cd ${{ env.APP_PATH }}
+      - name: Add Firewall Rule
+        run: |
+          gcloud compute firewall-rules create github-actions-temp-${{ github.run_id }} \
+            --allow=tcp:22 \
+            --source-ranges=${{ steps.ip.outputs.ip }}/32 \
+            --target-tags=ai-server \
+            --project=${{ env.GCP_PROJECT_ID }} \
+            --description="Temporary rule for GitHub Actions CD"
+          echo "Firewall rule created for IP: ${{ steps.ip.outputs.ip }}"
 
-            # 1. 현재 커밋 해시 저장 (롤백용)
-            PREVIOUS_COMMIT=$(git rev-parse HEAD)
-            echo "현재 버전: $PREVIOUS_COMMIT"
-            echo "$PREVIOUS_COMMIT" > /tmp/ai-server-previous-commit
+      - name: Download Artifact
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ./artifact
 
-            # 2. 최신 코드 가져오기
-            echo "최신 코드 가져오는 중..."
-            git fetch origin main
-            git reset --hard origin/main
+          RUN_ID=$(gh run list \
+            --repo ${{ github.repository }} \
+            --workflow="AI Server CI" \
+            --branch=main \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
 
-            NEW_COMMIT=$(git rev-parse HEAD)
-            echo "새 버전: $NEW_COMMIT"
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful CI run found"
+            exit 1
+          fi
 
-            # 3. 가상환경 활성화
-            source ${{ env.VENV_PATH }}/bin/activate
+          echo "Downloading artifact from run: $RUN_ID"
+          gh run download "$RUN_ID" --repo ${{ github.repository }} --dir ./artifact
 
-            # 4. 의존성 설치
-            echo "의존성 설치 중..."
-            pip install -r requirements.txt --quiet
+          ARTIFACT_FILE=$(find ./artifact -name "*.tar.gz" | head -1)
+          if [ -z "$ARTIFACT_FILE" ]; then
+            echo "Artifact not found"
+            exit 1
+          fi
+          echo "file=$ARTIFACT_FILE" >> $GITHUB_OUTPUT
 
-            # 5. 서비스 재시작
-            echo "서비스 재시작 중..."
-            sudo systemctl restart ${{ env.SERVICE_NAME }}
+      - name: Deploy to VM
+        run: |
+          # Artifact 전송
+          gcloud compute scp ${{ steps.artifact.outputs.file }} \
+            ${{ env.GCP_INSTANCE }}:/tmp/ai-server-deploy.tar.gz \
+            --zone=${{ env.GCP_ZONE }}
 
-            # 6. 서비스 시작 대기
-            echo "서비스 시작 대기 중... (15초)"
-            sleep 15
+          # VM에서 배포 실행
+          gcloud compute ssh ${{ env.GCP_INSTANCE }} \
+            --zone=${{ env.GCP_ZONE }} \
+            --command='
+              set -e
 
-            echo "=== AI Server 배포 완료 ==="
+              # uv 설치 (없는 경우)
+              if ! command -v uv &> /dev/null; then
+                echo "Installing uv..."
+                curl -LsSf https://astral.sh/uv/install.sh | sh
+              fi
+              export PATH="$HOME/.local/bin:$PATH"
 
-      # -----------------------------------------------------------------------
-      # Step 3: 헬스체크
-      # -----------------------------------------------------------------------
-      - name: Health check
-        id: healthcheck
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AI_EC2_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            echo "헬스체크 실행 중..."
-
-            # 최대 5번 재시도
-            for i in {1..5}; do
-              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
-
-              if [ "$HTTP_STATUS" -eq 200 ]; then
-                echo "✅ 헬스체크 성공 (HTTP $HTTP_STATUS)"
-                exit 0
+              # 백업 생성 (최근 3개만 유지, venv 제외)
+              BACKUP_DIR="/app/ai-server-backup-$(date +%Y%m%d%H%M%S)"
+              if [ -d "/app/ai-server" ]; then
+                sudo rsync -a --exclude="venv" --exclude=".venv" /app/ai-server/ "$BACKUP_DIR/"
+                echo "Backup created: $BACKUP_DIR"
+                # 오래된 백업 정리
+                ls -dt /app/ai-server-backup-* 2>/dev/null | tail -n +4 | xargs -r sudo rm -rf
               fi
 
-              echo "대기 중... ($i/5) - HTTP $HTTP_STATUS"
-              sleep 5
-            done
+              # 서비스 중단
+              sudo systemctl stop ai-server || true
 
-            echo "❌ 헬스체크 실패"
-            exit 1
+              # 배포
+              sudo mkdir -p /app/ai-server
+              sudo tar -xzf /tmp/ai-server-deploy.tar.gz -C /app/ai-server
 
-      # -----------------------------------------------------------------------
-      # Step 4: 서비스 상태 확인 (헬스체크 성공 시에만)
-      # -----------------------------------------------------------------------
-      - name: Check service status
-        if: steps.healthcheck.outcome == 'success'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AI_EC2_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            echo "=== 서비스 상태 ==="
-            sudo systemctl status ${{ env.SERVICE_NAME }} --no-pager | head -15
+              # 권한 설정 (uv sync 전에 먼저 설정)
+              sudo chown -R $(whoami):$(whoami) /app/ai-server
 
-            echo ""
-            echo "=== 배포된 버전 ==="
-            cd ${{ env.APP_PATH }}
-            git log -1 --oneline
+              # uv sync (uv.lock 변경 시에만 재설치)
+              cd /app/ai-server
+              NEW_HASH=$(md5sum uv.lock | cut -d" " -f1)
+              OLD_HASH=""
+              if [ -f ".venv/.uv_lock_hash" ]; then
+                OLD_HASH=$(cat .venv/.uv_lock_hash)
+              fi
 
-      # -----------------------------------------------------------------------
-      # Step 5: Discord 성공 알림
-      # -----------------------------------------------------------------------
-      - name: Discord - Deploy Success
-        if: steps.healthcheck.outcome == 'success'
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "AI Server 배포 성공"
-          description: |
-            **Branch**: ${{ github.ref_name }}
-            **Deployed by**: ${{ github.actor }}
-            ✅ AI 기능이 정상 동작 중입니다.
-          color: 0x00ff00
+              if [ "$NEW_HASH" != "$OLD_HASH" ] || [ ! -d ".venv" ]; then
+                echo "uv.lock changed or .venv missing, installing..."
+                rm -rf .venv
+                $HOME/.local/bin/uv sync --frozen
+                echo "$NEW_HASH" > .venv/.uv_lock_hash
+                echo "Dependencies installed"
+              else
+                echo "uv.lock unchanged, skipping dependency install"
+              fi
 
-      # -----------------------------------------------------------------------
-      # Step 6: Discord 실패 알림
-      # -----------------------------------------------------------------------
-      - name: Discord - Deploy Failed
-        if: steps.healthcheck.outcome == 'failure'
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "AI Server 배포 실패 - 수동 롤백 필요"
-          description: |
-            **Branch**: ${{ github.ref_name }}
-            **Triggered by**: ${{ github.actor }}
-            헬스체크 실패. 수동 롤백이 필요합니다.
-          color: 0xff0000
+              # 서비스 시작
+              sudo systemctl start ai-server
 
-      # -----------------------------------------------------------------------
-      # Step 7: 헬스체크 실패 시 워크플로우 실패 처리
-      # -----------------------------------------------------------------------
-      - name: Fail workflow on health check failure
-        if: steps.healthcheck.outcome == 'failure'
-        run: exit 1
+              # 정리
+              rm -f /tmp/ai-server-deploy.tar.gz
+            '
+
+      - name: Health Check
+        id: healthcheck
+        run: |
+          EXTERNAL_IP=$(gcloud compute instances describe ${{ env.GCP_INSTANCE }} \
+            --zone=${{ env.GCP_ZONE }} \
+            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+
+          echo "Health check: http://$EXTERNAL_IP:8000/health"
+
+          for i in {1..12}; do
+            if curl -s -f "http://$EXTERNAL_IP:8000/health" > /dev/null; then
+              echo "Health check passed"
+              echo "status=success" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Attempt $i/12 - Waiting..."
+            sleep 5
+          done
+
+          echo "Health check failed"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Rollback on Failure
+        if: failure() && steps.healthcheck.outputs.status == 'failed'
+        run: |
+          gcloud compute ssh ${{ env.GCP_INSTANCE }} \
+            --zone=${{ env.GCP_ZONE }} \
+            --command='
+              set -e
+              LATEST_BACKUP=$(ls -td /app/ai-server-backup-* 2>/dev/null | head -1)
+
+              if [ -n "$LATEST_BACKUP" ]; then
+                echo "Rolling back to: $LATEST_BACKUP"
+                sudo systemctl stop ai-server || true
+                sudo rm -rf /app/ai-server
+                sudo mv "$LATEST_BACKUP" /app/ai-server
+                sudo systemctl start ai-server
+                echo "Rollback completed"
+              else
+                echo "No backup found"
+                exit 1
+              fi
+            '
+
+      - name: Remove Firewall Rule
+        if: always()
+        run: |
+          gcloud compute firewall-rules delete github-actions-temp-${{ github.run_id }} \
+            --project=${{ env.GCP_PROJECT_ID }} \
+            --quiet || true
+          echo "Firewall rule removed"
 ```
 
 <br>
@@ -256,10 +279,11 @@ jobs:
 
 | Secret 이름 | 설명 | 예시 |
 |------------|------|------|
-| `AI_EC2_HOST` | AI 서버 EC2 IP (CPU 인스턴스와 다를 수 있음) | `3.36.xxx.xxx` |
-| `SSH_USERNAME` | SSH 접속 사용자명 | `ubuntu` |
-| `SSH_PRIVATE_KEY` | SSH 프라이빗 키 (전체 내용) | `-----BEGIN OPENSSH...` |
-| `DISCORD_WEBHOOK` | Discord 웹훅 URL | `https://discord.com/api/webhooks/...` |
+| `GCP_PROJECT_ID` | GCP 프로젝트 ID | `dojangkok-ai` |
+| `GCP_ZONE` | VM 인스턴스 Zone | `asia-northeast3-a` |
+| `GCP_INSTANCE` | VM 인스턴스 이름 | `ai-server-prod` |
+| `WORKLOAD_IDENTITY_PROVIDER` | WIF Provider 전체 경로 | `projects/123/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_SERVICE_ACCOUNT` | 서비스 계정 이메일 | `github-actions@project.iam.gserviceaccount.com` |
 
 ---
 
@@ -267,42 +291,77 @@ jobs:
 
 ```mermaid
 flowchart TD
-    A[workflow_dispatch 실행] --> B{confirm == 'yes'?}
-    B -->|No| Z[종료]
-    B -->|Yes| C[Discord 시작 알림]
-    C --> D[SSH 접속]
-    D -->|실패| X[Discord 실패 알림]
-    D -->|성공| E[이전 커밋 저장]
-    E --> F[git pull]
-    F --> G[pip install]
-    G --> H[서비스 재시작]
-    H --> I[헬스체크]
-    I -->|성공| Y[Discord 성공 알림]
-    I -->|실패| X[Discord 실패 알림 - 수동 롤백 필요]
+    A[PR 머지 to main 또는 수동 실행] --> B[GCP OIDC 인증]
+    B --> C[Runner IP 획득]
+    C --> D[동적 방화벽 규칙 생성]
+    D --> E[CI Artifact 다운로드]
+    E --> F[VM에 Artifact 전송]
+    F --> G[백업 생성]
+    G --> H[서비스 중단]
+    H --> I[코드 배포]
+    I --> J{uv.lock 변경?}
+    J -->|Yes| K[uv sync 실행]
+    J -->|No| L[의존성 설치 스킵]
+    K --> M[서비스 시작]
+    L --> M
+    M --> N[헬스체크]
+    N -->|성공| O[방화벽 규칙 삭제]
+    N -->|실패| P[자동 롤백]
+    P --> O
+    O --> Q[완료]
 ```
 
 <br>
 
-## 예상 소요 시간
+## 주요 특징
 
-**측정 기준**: 초기 추정치 (운영 후 실제 배포 로그 기반으로 업데이트 예정)
+### Workload Identity Federation (OIDC)
 
-| 단계 | 예상 시간 | 산정 근거 |
-|------|----------|----------|
-| git pull | ~10초 | 코드 변경량에 따라 변동 |
-| pip install | ~1-2분 | 의존성 변경 시 더 소요 (캐시 활용 시 ~30초) |
-| 서비스 재시작 | ~5초 | systemctl restart 명령 |
-| 서비스 시작 대기 | ~15초 | FastAPI 서버 부팅 |
-| 헬스체크 | ~5초 | 최대 25초 (5회 × 5초 대기) |
-| **총합** | **~2-3분** | 다운타임 ~30초 |
+SSH 키 없이 GCP에 인증하는 방식.
 
-### pip install 시간 변동성
+**장점:**
+- 키 관리 불필요 (유출 위험 없음)
+- 자동 토큰 만료 (15분)
+- GitHub 워크플로우에서만 사용 가능
 
-| 상황 | 예상 시간 |
-|------|----------|
-| 의존성 변경 없음 | ~10초 |
-| 마이너 패키지 추가 | ~30초 |
-| 대형 패키지 추가 (torch 등) | ~2-5분 |
+**설정 요구사항:**
+- GCP Workload Identity Pool 생성
+- GitHub Provider 연결
+- Service Account에 적절한 IAM 역할 부여
+
+### 동적 방화벽 규칙
+
+GitHub Actions Runner의 IP에 대해서만 SSH 허용.
+
+```bash
+# 배포 시작 시 생성
+gcloud compute firewall-rules create github-actions-temp-${{ github.run_id }} \
+  --allow=tcp:22 \
+  --source-ranges=${{ steps.ip.outputs.ip }}/32 \
+  --target-tags=ai-server
+
+# 배포 완료 후 삭제 (always)
+gcloud compute firewall-rules delete github-actions-temp-${{ github.run_id }}
+```
+
+### 자동 롤백
+
+헬스체크 실패 시 자동으로 이전 버전으로 복원.
+
+**백업 정책:**
+- 배포 전 현재 버전 백업
+- 최근 3개 백업만 유지
+- venv 디렉토리는 백업에서 제외
+
+**롤백 트리거:**
+- 헬스체크 12회 시도 (60초) 실패 시
+
+### uv 패키지 관리
+
+**최적화:**
+- uv.lock 해시 비교로 변경 시에만 재설치
+- .venv/.uv_lock_hash 파일로 상태 추적
+- 의존성 변경 없으면 설치 스킵
 
 <br>
 
@@ -310,7 +369,7 @@ flowchart TD
 
 ### 서비스 파일 위치
 ```
-/etc/systemd/system/dojangkok-ai.service
+/etc/systemd/system/ai-server.service
 ```
 
 ### 서비스 파일 예시
@@ -324,8 +383,7 @@ After=network.target
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/app/ai-server
-Environment="PATH=/app/ai-server/venv/bin"
-ExecStart=/app/ai-server/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+ExecStart=/app/ai-server/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
 
@@ -344,117 +402,87 @@ WantedBy=multi-user.target
 
 ```bash
 # 서비스 시작
-sudo systemctl start dojangkok-ai
+sudo systemctl start ai-server
 
 # 서비스 중단
-sudo systemctl stop dojangkok-ai
+sudo systemctl stop ai-server
 
 # 서비스 재시작
-sudo systemctl restart dojangkok-ai
+sudo systemctl restart ai-server
 
 # 서비스 상태 확인
-sudo systemctl status dojangkok-ai
+sudo systemctl status ai-server
 
 # 로그 확인
-sudo journalctl -u dojangkok-ai -f
+sudo journalctl -u ai-server -f
 ```
 
 <br>
 
 ## 롤백 절차
 
+### 자동 롤백 (CD 워크플로우)
+
+헬스체크 실패 시 자동으로 실행됨. 수동 개입 불필요.
+
 ### 수동 롤백 방법
 
 ```bash
-# 1. SSH 접속
-ssh -i key.pem ubuntu@<AI_EC2_HOST>
+# 1. GCP Console 또는 gcloud로 VM 접속
+gcloud compute ssh ai-server-prod --zone=asia-northeast3-a
 
-# 2. 이전 커밋 해시 확인 (배포 시 저장됨)
-cat /tmp/ai-server-previous-commit
+# 2. 백업 목록 확인
+ls -lt /app/ai-server-backup-*
 
-# 3. 또는 Git 로그에서 확인
-cd /app/ai-server
-git log --oneline -10
+# 3. 롤백 실행
+LATEST_BACKUP=$(ls -td /app/ai-server-backup-* | head -1)
+sudo systemctl stop ai-server
+sudo rm -rf /app/ai-server
+sudo mv "$LATEST_BACKUP" /app/ai-server
+sudo systemctl start ai-server
 
-# 4. 이전 버전으로 롤백
-git checkout <previous-commit-hash>
-
-# 5. 의존성 재설치 (필요 시)
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 6. 서비스 재시작
-sudo systemctl restart dojangkok-ai
-
-# 7. 상태 확인
+# 4. 상태 확인
 curl http://localhost:8000/health
-```
-
-### 특정 버전으로 롤백
-
-```bash
-# 특정 태그나 커밋으로 롤백
-git fetch origin
-git checkout v1.2.0  # 태그 사용
-# 또는
-git checkout abc1234  # 커밋 해시 사용
-
-source venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart dojangkok-ai
 ```
 
 <br>
 
 ## 실패 시 대응
 
-### SSH 접속 실패
-- **원인**: 보안 그룹 설정, 인스턴스 중단
+### OIDC 인증 실패
+- **원인**: Workload Identity 설정 오류
+- **해결**:
+  - GCP Console에서 Workload Identity Pool 확인
+  - Service Account 권한 확인
+  - Secrets 값 재확인
+
+### 방화벽 규칙 생성 실패
+- **원인**: Service Account 권한 부족
 - **해결**:
   ```bash
-  # AWS 콘솔에서 인스턴스 상태 확인
-  # 보안 그룹에서 SSH (22번 포트) 허용 확인
+  # 필요한 역할 확인
+  gcloud projects get-iam-policy $PROJECT_ID \
+    --filter="bindings.members:github-actions@"
   ```
 
-### pip install 실패
-- **원인**: 패키지 버전 충돌, 디스크 공간 부족
+### Artifact 다운로드 실패
+- **원인**: CI 워크플로우 실패, Artifact 만료
 - **해결**:
-  ```bash
-  # 디스크 공간 확인
-  df -h
-
-  # 캐시 삭제 후 재시도
-  pip cache purge
-  pip install -r requirements.txt
-
-  # 특정 패키지 문제 시
-  pip install <패키지명> --force-reinstall
-  ```
-
-### 서비스 시작 실패
-- **원인**: 포트 충돌, 환경 변수 누락, 문법 오류
-- **해결**:
-  ```bash
-  # 로그 확인
-  sudo journalctl -u dojangkok-ai -n 50 --no-pager
-
-  # 포트 확인
-  sudo lsof -i :8000
-
-  # 수동으로 실행해서 오류 확인
-  cd /app/ai-server
-  source venv/bin/activate
-  uvicorn main:app --host 0.0.0.0 --port 8000
-  ```
+  - CI 워크플로우 상태 확인
+  - Artifact retention-days 확인 (기본 7일)
 
 ### 헬스체크 실패
-- **확인사항**: Discord 실패 알림 확인
-- **원인 분석**:
+- **확인사항**:
   ```bash
-  # 로그 확인 (배포했던 새 버전 시점)
-  sudo journalctl -u dojangkok-ai --since "10 minutes ago"
+  # VM 접속 후 로그 확인
+  sudo journalctl -u ai-server -n 100
+
+  # 수동 실행으로 오류 확인
+  cd /app/ai-server
+  source .venv/bin/activate
+  uvicorn main:app --host 0.0.0.0 --port 8000
   ```
-- **수동 롤백**: 롤백 절차 섹션 참조
+- **자동 롤백**: CD 워크플로우가 자동으로 이전 버전으로 복원
 
 <br>
 
@@ -487,7 +515,7 @@ ENVIRONMENT=production
 
 ## 향후 계획
 
-- [ ] 인스턴스 타입 결정 (On-Demand / Spot)
-- [ ] requirements.txt 해시 비교 (변경 시에만 pip install)
+- [ ] Blue-Green 또는 Canary 배포 검토
 - [ ] 모델 파일 버전 관리
 - [ ] Graceful shutdown (요청 처리 완료 후 종료)
+- [ ] 배포 알림 (Slack/Discord)
