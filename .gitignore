@@ -1,0 +1,45 @@
+# ============================
+# Terraform
+# ============================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ============================
+# Claude Code
+# ============================
+.claude/
+
+# ============================
+# IDE / Editor
+# ============================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================
+# OS
+# ============================
+Thumbs.db
+ehthumbs.db
+
+# ============================
+# Secrets / Credentials
+# ============================
+*.pem
+*.key
+credentials.json
+service-account*.json
