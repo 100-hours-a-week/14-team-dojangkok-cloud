@@ -1,7 +1,7 @@
 # AI Server CI 설정 가이드
 
 - 작성일: 2026-01-07
-- 최종수정일: 2026-01-25
+- 최종수정일: 2026-01-26
 
 <br>
 
@@ -10,7 +10,7 @@
 1. [개요](#1-개요)
 2. [CI 워크플로우](#2-ci-워크플로우)
    - [파일 위치](#21-파일-위치)
-   - [워크플로우 파일](#22-워크플로우-파일)
+   - [CI Jobs](#22-ci-jobs)
    - [파이프라인 단계 설명](#23-파이프라인-단계-설명)
 3. [린트/테스트 설정](#3-린트테스트-설정)
 4. [환경 설정](#4-환경-설정)
@@ -25,6 +25,8 @@
 
 이 문서는 **FastAPI(AI Server) 프로젝트**의 GitHub Actions CI 설정을 다룬다.
 
+> **참고**: CI/CD가 하나의 워크플로우(`ai-cicd.yml`)로 통합되어 있음. 이 문서는 CI 부분(lint-test, build-and-artifact)만 다룸. CD 부분은 [[ai-server-cd-guide]] 참조.
+
 **기술 스택:**
 - FastAPI
 - Python 3.10
@@ -36,7 +38,7 @@
 - 포맷터: Ruff format
 - 테스트: pytest (단위 테스트 + 커버리지)
 
-> CI 도구 선택 이유, 브랜치 전략 등 공통 내용은 [[Step2 : CI 파이프라인 구축]] 참조
+> CI 도구 선택 이유, 브랜치 전략 등 공통 내용은 [[2단계 : CI 파이프라인 구축]] 참조
 
 <br>
 
@@ -45,29 +47,26 @@
 ### 2.1 파일 위치
 
 ```
-.github/workflows/ai-ci.yml
+.github/workflows/ai-cicd.yml
 ```
 
-### 2.2 워크플로우 파일
+> CI/CD 통합 워크플로우. deploy job은 `if: github.ref == 'refs/heads/main'` 조건으로 main 브랜치에서만 실행됨.
+
+### 2.2 CI Jobs
 
 ```yaml
-# AI Server CI Pipeline
-# 위치: .github/workflows/ai-ci.yml
-#
-# 트리거 매트릭스:
-#   - PR feat/* → dev: lint-test
-#   - Push dev: lint-test, build
-#   - PR dev/hotfix/* → main: lint-test, build
-#   - Push main: artifact
-#
-# 패키지 관리: uv (pyproject.toml + uv.lock)
+# AI Server CI/CD Pipeline (CI 부분)
+# 위치: .github/workflows/ai-cicd.yml
 
-name: AI Server CI
+name: AI Server CI/CD
+
+concurrency:
+  group: ai-server-cicd-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
-  workflow_dispatch:  # 수동 실행
   push:
-    branches: [main, dev]
+    branches: [dev, main]
     paths-ignore:
       - '.github/workflows/**'
       - '**.md'
@@ -78,18 +77,19 @@ on:
       - '.github/workflows/**'
       - '**.md'
       - 'docs/**'
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.10"
 
 jobs:
   # ============================================
-  # Lint & Test
+  # CI: Lint & Test
   # ============================================
   lint-test:
     name: Lint & Test
     runs-on: ubuntu-22.04
-    continue-on-error: true  # lint 실패해도 CI 통과
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,16 +121,12 @@ jobs:
           fi
 
   # ============================================
-  # Build
-  # dev push, main PR에서만 실행 (main push 제외)
+  # CI: Build & Artifact
   # ============================================
-  build:
-    name: Build
+  build-and-artifact:
+    name: Build & Artifact
     runs-on: ubuntu-22.04
     needs: lint-test
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -149,27 +145,12 @@ jobs:
 
       - name: Verify Build
         run: |
-          # Python 문법 검증
           uv run python -m py_compile $(find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" 2>/dev/null || echo "")
           echo "Build verification completed"
-
-  # ============================================
-  # Upload Artifact
-  # main push에서만 실행
-  # ============================================
-  artifact:
-    name: Upload Artifact
-    runs-on: ubuntu-22.04
-    needs: lint-test
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Create Artifact
         run: |
           mkdir -p dist
-          # 소스코드 패키징 (의존성 제외)
           tar -czvf dist/ai-server-${{ github.sha }}.tar.gz \
             --exclude='.git' \
             --exclude='.github' \
@@ -187,6 +168,8 @@ jobs:
           name: ai-server-${{ github.sha }}
           path: dist/
           retention-days: 7
+
+  # deploy job은 ai-server-cd-guide.md 참조
 ```
 
 ### 2.3 파이프라인 단계 설명
@@ -196,8 +179,16 @@ jobs:
 | Job | 실행 조건 | 설명 |
 |-----|----------|------|
 | lint-test | 항상 | 린트, 포맷 체크, 테스트 (continue-on-error) |
-| build | dev push, main PR | 의존성 설치 + 문법 검증 |
-| artifact | main push | 소스코드 패키징 및 업로드 |
+| build-and-artifact | lint-test 완료 후 | 빌드 검증 + Artifact 생성/업로드 |
+| deploy | main 브랜치만 | CD 가이드 참조 |
+
+#### 동작 시나리오
+
+| 이벤트 | lint-test | build-artifact | deploy |
+|--------|:---------:|:--------------:|:------:|
+| PR 생성/업데이트 | O | O | X |
+| PR 머지 (main push) | O | O | O |
+| dev push | O | O | X |
 
 #### lint-test 단계
 
@@ -210,6 +201,14 @@ jobs:
 | Ruff Linter | 코드 검사 | 실패해도 warning |
 | Ruff Formatter | 포맷 체크 | 실패해도 warning |
 | Tests | pytest 실행 | 커버리지 포함 |
+
+#### build-and-artifact 단계
+
+| 단계 | 설명 | 비고 |
+|------|------|------|
+| Verify Build | Python 문법 검증 | py_compile |
+| Create Artifact | tar.gz 패키징 | 소스코드만 (venv 제외) |
+| Upload Artifact | GitHub에 업로드 | retention 7일 |
 
 <br>
 
@@ -280,23 +279,20 @@ uv lock --upgrade
 
 ```mermaid
 flowchart TD
-    A[Push/PR to main or dev] --> B[lint-test Job]
+    A[Push/PR] --> B[lint-test Job]
     B --> C{Lint 성공?}
     C -->|Pass| D[Format Check]
-    C -->|Fail| D[Warning 기록]
+    C -->|Fail| D2[Warning 기록]
     D --> E[pytest 실행]
-    E --> F{트리거 조건?}
-
-    F -->|dev push 또는 main PR| G[build Job]
-    F -->|main push| H[artifact Job]
-    F -->|그 외| I[완료]
-
-    G --> J[문법 검증]
-    J --> I
-
-    H --> K[tar.gz 패키징]
-    K --> L[Artifact 업로드]
-    L --> I
+    D2 --> E
+    E --> F[build-and-artifact Job]
+    F --> G[의존성 설치]
+    G --> H[문법 검증]
+    H --> I[tar.gz 패키징]
+    I --> J[Artifact 업로드]
+    J --> K{main 브랜치?}
+    K -->|Yes| L[deploy Job - CD 가이드 참조]
+    K -->|No| M[완료]
 ```
 
 <br>

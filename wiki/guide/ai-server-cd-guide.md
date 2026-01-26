@@ -1,22 +1,21 @@
 # AI Server CD 설정 가이드
 
 - 작성일: 2026-01-08
-- 최종수정일: 2026-01-25
+- 최종수정일: 2026-01-26
 
 ## 목차
 
 1. [개요](#개요)
    - [기술 스택](#기술-스택)
    - [배포 방식 요약](#배포-방식-요약)
-2. [CD 워크플로우 파일](#cd-워크플로우-파일)
+2. [CD 워크플로우](#cd-워크플로우)
    - [파일 위치](#파일-위치)
-   - [전체 yml 파일](#전체-yml-파일)
+   - [Deploy Job](#deploy-job)
 3. [GitHub Secrets 설정](#github-secrets-설정)
 4. [CD 흐름](#cd-흐름)
 5. [주요 특징](#주요-특징)
    - [Workload Identity Federation (OIDC)](#workload-identity-federation-oidc)
    - [동적 방화벽 규칙](#동적-방화벽-규칙)
-   - [자동 롤백](#자동-롤백)
    - [uv 패키지 관리](#uv-패키지-관리)
 6. [systemd 서비스 설정](#systemd-서비스-설정)
 7. [롤백 절차](#롤백-절차)
@@ -28,9 +27,9 @@
 
 ## 개요
 
-### 이 문서의 범위
-
 이 문서는 **FastAPI(AI Server) 프로젝트**의 GitHub Actions CD 설정을 다룬다.
+
+> **참고**: CI/CD가 하나의 워크플로우(`ai-cicd.yml`)로 통합되어 있음. 이 문서는 CD 부분(deploy job)만 다룸. CI 부분은 [[ai-server-ci-guide]] 참조.
 
 ### 기술 스택
 
@@ -51,68 +50,62 @@
 | 아티팩트 | CI에서 생성된 tar.gz |
 | 배포 방식 | Artifact 다운로드 → uv sync → 서비스 재시작 |
 | 다운타임 | 서비스 재시작 시간 |
-| 롤백 방식 | 자동 (헬스체크 실패 시) + 수동 (backup 폴더 복원) |
+| 롤백 방식 | Re-run (해당 시점 아티팩트 재배포) |
 
 <br>
 
-## CD 워크플로우 파일
+## CD 워크플로우
 
 ### 파일 위치
 ```
-.github/workflows/ai-cd.yml
+.github/workflows/ai-cicd.yml
 ```
 
-### 전체 yml 파일
+> CI/CD 통합 워크플로우. deploy job은 `if: github.ref == 'refs/heads/main'` 조건으로 main 브랜치에서만 실행됨.
+
+### 동작 시나리오
+
+| 이벤트 | lint-test | build-artifact | deploy |
+|--------|:---------:|:--------------:|:------:|
+| PR 생성/업데이트 | O | O | X (`refs/pull/...`) |
+| PR 머지 (main push) | O | O | O (`refs/heads/main`) |
+| 롤백 (Re-run) | O | O | O |
+
+### Deploy Job
 
 ```yaml
-# AI Server CD Pipeline
-# 위치: .github/workflows/ai-cd.yml
-#
-# 트리거: main 브랜치 PR 머지 (자동), 수동 (workflow_dispatch)
-# 인증: GCP Workload Identity Federation (OIDC)
-# 배포: In-place 배포 (VM 직접 업데이트)
-# 패키지 관리: uv (pyproject.toml + uv.lock)
-
-name: AI Server CD
-
-on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-  workflow_dispatch:
-
-env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_ZONE: ${{ secrets.GCP_ZONE }}
-  GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
-  WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-  SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-jobs:
+  # ============================================
+  # CD: Deploy (main 브랜치만)
+  # ============================================
   deploy:
     name: Deploy to GCP
+    if: github.ref == 'refs/heads/main'
+    needs: build-and-artifact
     runs-on: ubuntu-22.04
     environment: 1-bigbang
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       id-token: write
       actions: read
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_ZONE: ${{ secrets.GCP_ZONE }}
+      GCP_INSTANCE: ${{ secrets.GCP_INSTANCE }}
     steps:
+      - name: Get Runner IP
+        id: ip
+        run: echo "ip=$(curl -s ifconfig.me)" >> $GITHUB_OUTPUT
+
       - name: Authenticate to GCP (OIDC)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ env.SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
-
-      - name: Get Runner IP
-        id: ip
-        run: echo "ip=$(curl -s ifconfig.me)" >> $GITHUB_OUTPUT
 
       - name: Add Firewall Rule
         run: |
@@ -125,40 +118,22 @@ jobs:
           echo "Firewall rule created for IP: ${{ steps.ip.outputs.ip }}"
 
       - name: Download Artifact
-        id: artifact
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-server-${{ github.sha }}
+          path: ./artifact
+
+      - name: Deploy to VM
         run: |
-          mkdir -p ./artifact
-
-          RUN_ID=$(gh run list \
-            --repo ${{ github.repository }} \
-            --workflow="AI Server CI" \
-            --branch=main \
-            --status=success \
-            --limit=1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
-
-          if [ -z "$RUN_ID" ]; then
-            echo "No successful CI run found"
-            exit 1
-          fi
-
-          echo "Downloading artifact from run: $RUN_ID"
-          gh run download "$RUN_ID" --repo ${{ github.repository }} --dir ./artifact
-
           ARTIFACT_FILE=$(find ./artifact -name "*.tar.gz" | head -1)
           if [ -z "$ARTIFACT_FILE" ]; then
             echo "Artifact not found"
             exit 1
           fi
-          echo "file=$ARTIFACT_FILE" >> $GITHUB_OUTPUT
+          echo "Deploying: $ARTIFACT_FILE"
 
-      - name: Deploy to VM
-        run: |
           # Artifact 전송
-          gcloud compute scp ${{ steps.artifact.outputs.file }} \
+          gcloud compute scp "$ARTIFACT_FILE" \
             ${{ env.GCP_INSTANCE }}:/tmp/ai-server-deploy.tar.gz \
             --zone=${{ env.GCP_ZONE }}
 
@@ -174,15 +149,6 @@ jobs:
                 curl -LsSf https://astral.sh/uv/install.sh | sh
               fi
               export PATH="$HOME/.local/bin:$PATH"
-
-              # 백업 생성 (최근 3개만 유지, venv 제외)
-              BACKUP_DIR="/app/ai-server-backup-$(date +%Y%m%d%H%M%S)"
-              if [ -d "/app/ai-server" ]; then
-                sudo rsync -a --exclude="venv" --exclude=".venv" /app/ai-server/ "$BACKUP_DIR/"
-                echo "Backup created: $BACKUP_DIR"
-                # 오래된 백업 정리
-                ls -dt /app/ai-server-backup-* 2>/dev/null | tail -n +4 | xargs -r sudo rm -rf
-              fi
 
               # 서비스 중단
               sudo systemctl stop ai-server || true
@@ -242,28 +208,6 @@ jobs:
           echo "status=failed" >> $GITHUB_OUTPUT
           exit 1
 
-      - name: Rollback on Failure
-        if: failure() && steps.healthcheck.outputs.status == 'failed'
-        run: |
-          gcloud compute ssh ${{ env.GCP_INSTANCE }} \
-            --zone=${{ env.GCP_ZONE }} \
-            --command='
-              set -e
-              LATEST_BACKUP=$(ls -td /app/ai-server-backup-* 2>/dev/null | head -1)
-
-              if [ -n "$LATEST_BACKUP" ]; then
-                echo "Rolling back to: $LATEST_BACKUP"
-                sudo systemctl stop ai-server || true
-                sudo rm -rf /app/ai-server
-                sudo mv "$LATEST_BACKUP" /app/ai-server
-                sudo systemctl start ai-server
-                echo "Rollback completed"
-              else
-                echo "No backup found"
-                exit 1
-              fi
-            '
-
       - name: Remove Firewall Rule
         if: always()
         run: |
@@ -291,29 +235,38 @@ jobs:
 
 ```mermaid
 flowchart TD
-    A[PR 머지 to main 또는 수동 실행] --> B[GCP OIDC 인증]
-    B --> C[Runner IP 획득]
-    C --> D[동적 방화벽 규칙 생성]
-    D --> E[CI Artifact 다운로드]
-    E --> F[VM에 Artifact 전송]
-    F --> G[백업 생성]
-    G --> H[서비스 중단]
-    H --> I[코드 배포]
-    I --> J{uv.lock 변경?}
-    J -->|Yes| K[uv sync 실행]
-    J -->|No| L[의존성 설치 스킵]
-    K --> M[서비스 시작]
-    L --> M
-    M --> N[헬스체크]
-    N -->|성공| O[방화벽 규칙 삭제]
-    N -->|실패| P[자동 롤백]
-    P --> O
-    O --> Q[완료]
+    A[main 브랜치 push] --> B[CI Jobs 완료]
+    B --> C[deploy Job 시작]
+    C --> D[GCP OIDC 인증]
+    D --> E[Runner IP 획득]
+    E --> F[동적 방화벽 규칙 생성]
+    F --> G[Artifact 다운로드]
+    G --> H[VM에 Artifact 전송]
+    H --> I[서비스 중단]
+    I --> J[코드 배포]
+    J --> K{uv.lock 변경?}
+    K -->|Yes| L[uv sync 실행]
+    K -->|No| M[의존성 설치 스킵]
+    L --> N[서비스 시작]
+    M --> N
+    N --> O[헬스체크]
+    O -->|성공| P[방화벽 규칙 삭제]
+    O -->|실패| Q[배포 실패 - Re-run으로 롤백]
+    P --> R[완료]
 ```
 
 <br>
 
 ## 주요 특징
+
+### 통합 CI/CD 워크플로우
+
+기존 분리된 CI/CD를 하나의 워크플로우로 통합.
+
+**장점:**
+- 단순한 구조: `if: github.ref == 'refs/heads/main'`으로 배포 제어
+- workflow_run 의존성 제거로 복잡도 감소
+- BE/FE와 동일한 패턴으로 일관성 유지
 
 ### Workload Identity Federation (OIDC)
 
@@ -343,18 +296,6 @@ gcloud compute firewall-rules create github-actions-temp-${{ github.run_id }} \
 # 배포 완료 후 삭제 (always)
 gcloud compute firewall-rules delete github-actions-temp-${{ github.run_id }}
 ```
-
-### 자동 롤백
-
-헬스체크 실패 시 자동으로 이전 버전으로 복원.
-
-**백업 정책:**
-- 배포 전 현재 버전 백업
-- 최근 3개 백업만 유지
-- venv 디렉토리는 백업에서 제외
-
-**롤백 트리거:**
-- 헬스체크 12회 시도 (60초) 실패 시
 
 ### uv 패키지 관리
 
@@ -421,24 +362,38 @@ sudo journalctl -u ai-server -f
 
 ## 롤백 절차
 
-### 자동 롤백 (CD 워크플로우)
+### Re-run 방식 (권장)
 
-헬스체크 실패 시 자동으로 실행됨. 수동 개입 불필요.
+롤백 필요 시 과거 실행을 Re-run하여 해당 시점의 아티팩트로 재배포한다.
 
-### 수동 롤백 방법
+**절차:**
+1. GitHub Actions → AI Server CI/CD 워크플로우로 이동
+2. 롤백하고 싶은 시점의 실행 기록 클릭
+3. "Re-run all jobs" 클릭
+4. 해당 시점의 아티팩트로 재배포됨
+
+**장점:**
+- BE/FE와 동일한 롤백 방식
+- 컨테이너 환경 전환 시 자연스럽게 적용 가능 (이미지 태그만 변경)
+- 워크플로우 단순화
+
+### 수동 롤백 방법 (아티팩트 직접 다운로드)
+
+GitHub UI에서 과거 아티팩트를 직접 다운로드하여 배포하는 방식.
 
 ```bash
-# 1. GCP Console 또는 gcloud로 VM 접속
+# 1. GitHub Actions UI → 이전 성공한 run → Artifacts → 다운로드
+
+# 2. GCP Console 또는 gcloud로 VM 접속
 gcloud compute ssh ai-server-prod --zone=asia-northeast3-a
 
-# 2. 백업 목록 확인
-ls -lt /app/ai-server-backup-*
+# 3. 아티팩트 업로드 및 배포
+# (로컬에서)
+gcloud compute scp ai-server-*.tar.gz ai-server-prod:/tmp/
 
-# 3. 롤백 실행
-LATEST_BACKUP=$(ls -td /app/ai-server-backup-* | head -1)
+# (VM에서)
 sudo systemctl stop ai-server
-sudo rm -rf /app/ai-server
-sudo mv "$LATEST_BACKUP" /app/ai-server
+sudo tar -xzf /tmp/ai-server-*.tar.gz -C /app/ai-server
 sudo systemctl start ai-server
 
 # 4. 상태 확인
@@ -466,9 +421,9 @@ curl http://localhost:8000/health
   ```
 
 ### Artifact 다운로드 실패
-- **원인**: CI 워크플로우 실패, Artifact 만료
+- **원인**: build-and-artifact job 실패, Artifact 만료
 - **해결**:
-  - CI 워크플로우 상태 확인
+  - build-and-artifact job 상태 확인
   - Artifact retention-days 확인 (기본 7일)
 
 ### 헬스체크 실패
@@ -482,7 +437,7 @@ curl http://localhost:8000/health
   source .venv/bin/activate
   uvicorn main:app --host 0.0.0.0 --port 8000
   ```
-- **자동 롤백**: CD 워크플로우가 자동으로 이전 버전으로 복원
+- **롤백**: 이전 성공한 실행을 Re-run하여 롤백 (위 [롤백 절차](#롤백-절차) 참조)
 
 <br>
 

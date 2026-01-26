@@ -609,6 +609,21 @@ GitHub Repository → Settings → Branches → Branch protection rules
 
 <br>
 
+## 현재 작업 상황 (2026-01-26 기준)
+
+> 설계 이후 구현 과정에서 추가/변경된 사항입니다. 상세 내용은 각 서버별 CI 설정 가이드를 참조하세요.
+
+### AI Server
+
+| 항목 | 설계 | 현재 구현 | 비고 |
+|------|------|----------|------|
+| artifact 생성 시점 | main push | main PR | CD 연동 개선 |
+| lint 실패 처리 | CI 차단 | continue-on-error | 개발 초기 유연성 |
+| paths-ignore | - | .md, docs/, workflows 제외 | 불필요한 CI 실행 방지 |
+| 패키지 관리 | pip | uv (uv.lock) | 속도 개선 |
+
+<br>
+
 ## 다음 단계
 
 이 문서는 CI 개요를 다룬다. 각 서버별 구체적인 CI 설정은 아래 문서를 참고:
