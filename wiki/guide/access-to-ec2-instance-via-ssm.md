@@ -60,3 +60,15 @@ aws ssm start-session --target ${instance_id} \
 3. 접속하고자 하는 IDE에서 **host는 127.0.0.1**, **포트번호는 localPortNumber**로 할당하시면 됩니다.
 4. Redis 비밀번호는 기존에 전달드린 정보를 사용하시면 됩니다.
 5. 이 명령어를 실행 중인 터미널 창을 닫으면 연결이 끊어지니, 백그라운드에서 작업하거나 별도의 터미널 창을 유지해주세요.
+
+## 5. 모니터링 페이지 접속
+해당 단계에서는 모니터링 페이지에 접속하기 위한 명령어를 안내합니다.
+```zsh
+aws ssm start-session --target ${instance_id} \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}' --region ap-northeast-2
+```
+1. 위 예시 명령어에서 **localPortNumber**의 경우 임의로 할당해둔 값이며 클라이언트 PC에서 충돌되지 않은 포트 번호를 할당하여 사용하시면 됩니다.
+2. instance_id의 경우 관리자에게 문의하여 전달 받으시면 됩니다.
+3. 웹 브라우저 주소창에 **http://localhost:{localPortNumber}**를 입력하여 접속하시면 됩니다. (모니터링 페이지 사용법에 대한 세부 안내는 별도 페이지에서 안내합니다.)
+4. 이 명령어를 실행 중인 터미널 창을 닫으면 연결이 끊어지니, 백그라운드에서 작업하거나 별도의 터미널 창을 유지해주세요.
