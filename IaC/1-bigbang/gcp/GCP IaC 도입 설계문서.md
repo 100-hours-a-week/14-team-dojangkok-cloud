@@ -1,8 +1,10 @@
-# GCP Infrastructure as Code (Terraform)
+# GCP Infrastructure as Code (Terraform) (v1.1.0)
 
 - 작성일: 2025-01-25
-- 최종수정일: 2026-01-25
+- 최종수정일: 2026-01-28
 - 작성자: waf.jung(정승환)
+
+> **v1.1.0 변경사항**: 모듈 구조 → 단층 구조로 변경 (AWS 스타일 통일)
 
 ---
 
@@ -49,7 +51,7 @@
 | Firewall | Terraform 관리 | TCP 8000, 8001, 8100 |
 | AI Server VM | 문서화 | n1-standard-4 + T4 GPU |
 
-> **참고**: VM은 현재 수동 관리 중입니다. VM 재생성 시 `ai-server` 모듈 코드를 사용하세요.
+> **참고**: VM은 현재 수동 관리 중입니다. VM 재생성 시 `compute.tf`의 코드를 사용하세요.
 
 ### 주요 사양
 
@@ -61,28 +63,32 @@
 
 ---
 
-## 3. 모듈 구성
+## 3. 파일 구성
+
+AWS와 동일한 단층 구조로 통일하여 관리 편의성을 높였습니다.
 
 ```
 IaC/gcp/
-├── README.md
-├── modules/
-│   ├── ai-server/          # GPU 지원 VM 인스턴스
-│   ├── firewall/           # 방화벽 규칙
-│   ├── github-actions-sa/  # CD 파이프라인용 Service Account
-│   └── workload-identity/  # GitHub Actions OIDC 인증
-└── environments/
-    └── prod/               # 프로덕션 환경
+├── provider.tf              # GCP Provider 설정
+├── variables.tf             # 모든 변수 통합
+├── outputs.tf               # 모든 출력 통합
+├── service_account.tf       # Service Account + IAM 권한
+├── workload_identity.tf     # Workload Identity Pool/Provider
+├── firewall.tf              # 방화벽 규칙
+├── compute.tf               # AI Server (GPU 지원)
+├── terraform.tfvars.example # 변수 예시 파일
+├── modules_legacy/          # 이전 모듈 (백업)
+└── environments_legacy/     # 이전 환경 (백업)
 ```
 
-### 모듈 설명
+### 파일별 역할
 
-| 모듈 | 용도 |
-|------|------|
-| `github-actions-sa` | GitHub Actions CD 파이프라인에서 사용할 Service Account 생성 및 IAM 권한 부여 |
-| `workload-identity` | GitHub OIDC를 통한 인증 설정 (키 없는 인증) |
-| `firewall` | AI 서버 배포 포트에 대한 방화벽 규칙 |
-| `ai-server` | GPU 지원 Compute Engine 인스턴스 (T4 GPU) |
+| 파일명 | 용도 |
+|--------|------|
+| `service_account.tf` | GitHub Actions CD 파이프라인용 Service Account 및 IAM 권한 |
+| `workload_identity.tf` | GitHub OIDC를 통한 인증 설정 (키 없는 인증) |
+| `firewall.tf` | AI 서버 배포 포트 방화벽 규칙 |
+| `compute.tf` | GPU 지원 Compute Engine 인스턴스 (T4 GPU) |
 
 ---
 
@@ -97,7 +103,7 @@ IaC/gcp/
 ### 환경 설정
 
 ```bash
-cd IaC/gcp/environments/prod
+cd IaC/gcp
 
 # 변수 파일 생성
 cp terraform.tfvars.example terraform.tfvars
@@ -126,7 +132,8 @@ terraform apply
 terraform state list
 
 # 특정 리소스 상세
-terraform state show module.github_actions_sa.google_service_account.github_actions
+terraform state show google_service_account.github_actions
+terraform state show google_compute_instance.ai_server
 ```
 
 ---
@@ -168,8 +175,8 @@ terraform output service_account_email
 ### VM 관리
 
 - **현재 VM은 terraform import 하지 않음** (수동 관리)
-- VM 재생성 필요 시 `ai-server` 모듈 활성화 후 apply
-- GPU가 포함된 VM은 `on_host_maintenance = TERMINATE` 필수
+- VM 재생성 필요 시 `compute.tf`의 `google_compute_instance.ai_server` 사용
+- GPU가 포함된 VM은 `on_host_maintenance = TERMINATE` 필수 (코드에 자동 반영됨)
 
 ### GPU 관련
 

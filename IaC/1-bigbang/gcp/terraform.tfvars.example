@@ -1,0 +1,38 @@
+# GCP Infrastructure Variables Example
+# 실제 사용 시 terraform.tfvars로 복사 후 값 수정
+
+# 기본 설정
+project_id = "dojangkok-ai"
+region     = "asia-northeast3"
+zone       = "asia-northeast3-b"
+
+# GitHub 설정
+github_org = "kakaotech-bootcamp-team14"
+
+# Service Account 설정 (기본값 사용 시 생략 가능)
+# sa_account_id    = "github-actions-sa"
+# sa_display_name  = "GitHub Actions Service Account"
+# enable_compute_admin  = true
+# enable_iap_tunnel     = true
+# enable_sa_user        = true
+# enable_security_admin = false
+
+# Workload Identity 설정 (기본값 사용 시 생략 가능)
+# wi_pool_id               = "github-pool"
+# wi_pool_display_name     = "GitHub Actions Pool"
+# wi_provider_id           = "github-provider"
+# wi_provider_display_name = "GitHub OIDC Provider"
+
+# Firewall 설정 (기본값 사용 시 생략 가능)
+# firewall_name          = "dojangkok-ai-server-fw"
+# firewall_network       = "default"
+# firewall_ports         = ["8000", "8001", "8100"]
+# firewall_source_ranges = ["0.0.0.0/0"]
+# firewall_target_tags   = ["ai-server"]
+
+# AI Server 설정
+ai_server_machine_type = "n1-standard-4"
+gpu_type               = "nvidia-tesla-t4"
+gpu_count              = 1
+boot_disk_size_gb      = 200
+# ai_server_is_spot    = false
