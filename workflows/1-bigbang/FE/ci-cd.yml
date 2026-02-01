@@ -152,7 +152,26 @@ jobs:
             echo "배포 성공"
           EOF
           rm -f ./key.pem
-      # 6. Github Action Runner IP 임시허용 해제
+      # 6. 배포 후 Health Check
+      - name: Health Check
+        env:
+          SERVICE_URL: ${{ secrets.SERVICE_URL }}
+        run: |
+          echo "Health Check 시작..."
+          MAX_RETRIES=10
+          RETRY_INTERVAL=5
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/health-check" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Health Check 성공 (HTTP $HTTP_STATUS)"
+              exit 0
+            fi
+            echo "시도 $i/$MAX_RETRIES: HTTP $HTTP_STATUS - ${RETRY_INTERVAL}초 후 재시도..."
+            sleep $RETRY_INTERVAL
+          done
+          echo "Health Check 실패: 서비스가 응답하지 않습니다."
+          exit 1
+      # 7. Github Action Runner IP 임시허용 해제
       - name: Revoke GitHub IP from Security Group
         if: always()
         run: |
