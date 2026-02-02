@@ -42,7 +42,7 @@ jobs:
         run: chmod +x gradlew
       # 4. 테스트 수행
       - name: Run tests
-        run: ./gradlew test --no-daemon -x test
+        run: ./gradlew test --no-daemon
       # 5. JAR 파일 빌드 (테스트를 선행하였으므로 바로 빌드 수행)
       - name: Build JAR
         run: ./gradlew bootJar --no-daemon -x test
