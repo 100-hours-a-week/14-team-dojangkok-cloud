@@ -1,6 +1,11 @@
 # 정의할 워크 플로우의 이름
 name: Dojangkok Client CI/CD
 
+# OIDC 인증을 위한 권한 설정
+permissions:
+  id-token: write # OIDC 토큰 발급에 필요
+  contents: read # 소스코드 체크아웃에 필요
+
 # 워크플로우를 실행할 이벤트 결정 및 매핑
 on:
   push:
@@ -65,12 +70,11 @@ jobs:
       # 3. 프로젝트의 의존성 패키지들을 설치
       - name: Install Dependencies
         run: npm ci --ignore-scripts
-      # 4. AWS 자격증명 설정
+      # 4. AWS 자격증명 설정 (OIDC)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
       # 5. 환경변수 파일 다운로드
       - name: Download .env from S3
@@ -97,12 +101,11 @@ jobs:
       - name: Get GitHub Actions Runner IP
         id: ip
         run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
-      # 1. AWS 자격증명 설정
+      # 1. AWS 자격증명 설정 (OIDC)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
       # 2. Github Action Runner IP 를 보안그룹에 임시허용
       - name: Add GitHub IP to Security Group
