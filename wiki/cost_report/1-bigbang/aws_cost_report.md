@@ -29,7 +29,7 @@
 | 컴퓨팅 | EC2 Monitoring 서버 | t4g.medium (2 vCPU, 4GB RAM, ARM) |
 | 스토리지 | EBS (Application) | gp3, 100GB |
 | 스토리지 | EBS (Monitoring) | gp3, 100GB |
-| 스토리지 | S3 버킷 3개 | 데이터 / 배포 아티팩트 / MySQL 백업 |
+| 스토리지 | S3 버킷 3개 | 데이터 / 배포 환경 설정 / MySQL 백업 |
 | 네트워크 | VPC | 10.0.0.0/18 |
 | 네트워크 | Internet Gateway | 1개 |
 | 네트워크 | VPC Endpoint for S3 | Gateway 타입 |
