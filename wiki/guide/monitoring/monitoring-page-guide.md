@@ -18,7 +18,7 @@
 
 대시보드 접속 방법은 별도의 보안 접속 가이드 문서에서 상세히 다루고 있습니다. 대시보드 접속이 처음이신 분들은 아래 링크를 통해 해당 문서를 먼저 확인해 주시기 바랍니다. (특히 5번 항목 참고)
 
-[AWS 인프라 보안접속 가이드](https://github.com/100-hours-a-week/14-team-dojangkok-cloud/wiki/AWS-%EC%9D%B8%ED%94%84%EB%9D%BC-%28EC2%2C-MySQL%2C-Redis%29-%EB%B3%B4%EC%95%88%EC%A0%91%EC%86%8D-%EA%B0%80%EC%9D%B4%EB%93%9C)
+[AWS 인프라 보안접속 가이드](https://github.com/100-hours-a-week/14-team-dojangkok-cloud/wiki/AWS-%EC%9D%B8%ED%94%84%EB%9D%BC-%28EC2%2C-MySQL%2C-Redis%2C-%EB%AA%A8%EB%8B%88%ED%84%B0%EB%A7%81-%ED%8E%98%EC%9D%B4%EC%A7%80%29-%EB%B3%B4%EC%95%88%EC%A0%91%EC%86%8D-%EA%B0%80%EC%9D%B4%EB%93%9C)
 
 
 ## 2. 모니터링 페이지 로그인
