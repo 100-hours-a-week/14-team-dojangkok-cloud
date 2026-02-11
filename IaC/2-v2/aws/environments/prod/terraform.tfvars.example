@@ -1,0 +1,31 @@
+# AWS Prod 환경 설정
+region       = "ap-northeast-2"
+project_name = "dojangkok-prod"
+vpc_id       = "vpc-060a437112ddb879d"
+
+# ACM 인증서 (HTTPS 사용 시)
+# ssl_certificate_arn = "arn:aws:acm:ap-northeast-2:ACCOUNT_ID:certificate/CERT_ID"
+
+# S3 버킷
+s3_buckets = {
+  data = {
+    name = "ktb-team14-dojangkok-bucket"
+  }
+  deploy = {
+    name = "ktb-team14-dojangkok-deploy"
+  }
+  backup = {
+    name = "ktb-team14-dojangkok-mysql-backup"
+  }
+}
+
+# ECR 리포지토리
+ecr_repositories = [
+  "dojangkok/frontend",
+  "dojangkok/backend",
+]
+
+# IAM (기존 리소스 이름 - terraform import 대상)
+ec2_role_name             = "ktb-team14-dojangkok-role-s3-bucket"
+ec2_instance_profile_name = "ktb-team14-dojangkok-role-s3-bucket"
+# codedeploy_role_name    = "dojangkok-codedeploy-role"  # CodeDeploy 사용 시

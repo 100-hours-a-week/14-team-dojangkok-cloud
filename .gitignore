@@ -20,6 +20,7 @@ import.tf
 # Claude Code
 # ============================
 .claude/
+CLAUDE.md
 
 # ============================
 # IDE / Editor

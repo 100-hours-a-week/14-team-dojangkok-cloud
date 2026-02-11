@@ -1,0 +1,32 @@
+services:
+  chromadb:
+    image: chromadb/chroma:${CHROMADB_VERSION:-latest}
+    network_mode: host
+    volumes:
+      - chromadb-data:/chroma/chroma
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    network_mode: host
+    volumes:
+      - /var/log:/var/log:ro
+      - /tmp/promtail-config.yml:/etc/promtail/config.yml:ro
+    restart: unless-stopped
+
+volumes:
+  chromadb-data:

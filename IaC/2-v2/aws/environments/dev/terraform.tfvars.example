@@ -1,0 +1,10 @@
+# AWS Dev 환경 설정
+region       = "ap-northeast-2"
+project_name = "dojangkok-dev"
+vpc_id       = "vpc-060a437112ddb879d"
+
+# S3/ECR은 PROD 환경에서 공유 리소스로 관리 (이 환경에서 생성하지 않음)
+
+# IAM (기존 리소스 이름 - terraform import 대상)
+ec2_role_name             = "ktb-team14-dojangkok-role-s3-bucket"
+ec2_instance_profile_name = "ktb-team14-dojangkok-role-s3-bucket"

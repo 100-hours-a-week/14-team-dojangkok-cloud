@@ -1,0 +1,15 @@
+# GCP Dev 환경 설정
+project_id = "TODO"  # DEV GCP 프로젝트 생성 후 입력
+region     = "asia-northeast3"
+zone       = "asia-northeast3-a"
+github_org = "100-hours-a-week"
+
+# 머신 타입 (기본값 사용 시 생략 가능)
+# ai_server_machine_type = "n2d-standard-2"
+# chromadb_machine_type  = "e2-medium"
+# vllm_machine_type      = "g2-standard-4"
+# vllm_gpu_type          = "nvidia-l4"
+# vllm_boot_disk_image   = "ubuntu-os-accelerator-images/ubuntu-accelerator-2204-amd64-with-nvidia-580"
+
+# AWS Monitoring IP (Prometheus EIP)
+monitoring_source_ips = ["0.0.0.0/0"]  # TODO: 실제 AWS Monitoring EIP로 변경 (예: ["15.165.80.197/32"])

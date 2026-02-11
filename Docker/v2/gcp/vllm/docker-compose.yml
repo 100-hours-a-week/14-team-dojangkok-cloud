@@ -1,0 +1,45 @@
+services:
+  vllm:
+    image: ${VLLM_IMAGE}
+    network_mode: host
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    command: >
+      --model ${VLLM_MODEL}
+      --port 8001
+      --enforce-eager
+      --enable-lora
+      --lora-modules ${LORA_MODULES}
+      --api-key ${VLLM_API_KEY}
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+    network_mode: host
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    network_mode: host
+    volumes:
+      - /var/log:/var/log:ro
+      - /tmp/promtail-config.yml:/etc/promtail/config.yml:ro
+    restart: unless-stopped

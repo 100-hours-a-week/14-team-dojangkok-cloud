@@ -1,0 +1,36 @@
+# AI Server CI/CD Pipeline (v2 - Multi-Environment)
+# 위치: .github/workflows/ai-cicd.yml
+#
+# 트리거:
+#   - PR → dev/main: lint-test만 실행
+#   - Push dev (PR 머지): lint-test → build-push → deploy (2-v2-dev)
+#   - Push main (PR 머지): lint-test → build-push → deploy (2-v2-prod)
+#   - workflow_dispatch: 전체 실행 (환경 선택 가능)
+#
+# 패키지 관리: uv (pyproject.toml + uv.lock)
+# 인증: GCP Workload Identity Federation (OIDC)
+# 배포: Docker Build → AR Push → MIG Rolling Update
+#
+# GitHub Environments 필요:
+#   - 2-v2-dev: DEV 프로젝트 secrets
+#   - 2-v2-prod: PROD 프로젝트 secrets
+#   각 환경에 동일 이름의 secret 등록 (값만 다르게):
+#     WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT,
+#     GCP_PROJECT_ID, AR_REPO, MIG_NAME, GCP_ZONE
+
+
+
+
+
+# ============================================
+# 향후 확장 포인트
+# ============================================
+# post-deploy-test:
+#   name: Post-Deploy Verification
+#   if: needs.set-env.outputs.should_deploy == 'true'
+#   needs: [set-env, deploy]
+#   runs-on: ubuntu-22.04
+#   environment: ${{ needs.set-env.outputs.environment }}
+#   steps:
+#     - name: Health Check / LLM-as-a-judge / e2e test
+#       run: echo "TODO: post-deploy verification"

@@ -1,0 +1,39 @@
+services:
+  ai-server:
+    image: ${AI_SERVER_IMAGE}
+    network_mode: host
+    environment:
+      APP_ENV: ${APP_ENV}
+      VLLM_BASE_URL: ${VLLM_BASE_URL}
+      VLLM_API_KEY: ${VLLM_API_KEY}
+      VLLM_MODEL: ${VLLM_MODEL}
+      VLLM_LORA_ADAPTER_CHECKLIST: ${VLLM_LORA_ADAPTER_CHECKLIST}
+      VLLM_LORA_ADAPTER_EASYCONTRACT: ${VLLM_LORA_ADAPTER_EASYCONTRACT}
+      CHROMADB_URL: ${CHROMADB_URL}
+      BACKEND_CALLBACK_BASE_URL: ${BACKEND_CALLBACK_BASE_URL}
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN}
+      OCR_API: ${OCR_API}
+      HTTP_TIMEOUT_SEC: ${HTTP_TIMEOUT_SEC}
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    network_mode: host
+    volumes:
+      - /var/log:/var/log:ro
+      - /tmp/promtail-config.yml:/etc/promtail/config.yml:ro
+    restart: unless-stopped
