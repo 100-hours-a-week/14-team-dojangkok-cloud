@@ -1,0 +1,154 @@
+# 정의할 워크 플로우의 이름
+name: Dojangkok Server CI/CD
+
+# OIDC 인증을 위한 권한 설정
+permissions:
+  id-token: write # OIDC 토큰 발급에 필요
+  contents: read # 소스코드 체크아웃에 필요
+
+# 워크플로우를 실행할 이벤트 결정 및 매핑
+on:
+  push:
+    branches: [test/v2]
+
+# 실행할 작업을 정의
+jobs:
+  test-and-build: # 테스트를 수행하는 단계
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 소스코드 체크아웃
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+      # 2. Java 21 런타임 설정
+      - name: Set up Java Runtime
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+          cache: 'gradle'
+      # 3. gradlew 실행 권한 부여
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      # 4. 테스트 수행
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+      # 5. JAR 파일 빌드 (테스트를 선행하였으므로 바로 빌드 수행)
+      - name: Build JAR
+        run: ./gradlew bootJar --no-daemon -x test
+      # 6. 빌드된 JAR 파일을 아티팩트로 업로드
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dojangkok-server-jar
+          path: build/libs/*.jar
+          retention-days: 7
+  
+  build-and-push-image: # 빌드 파일을 가지고 Container Image를 구성하는 단계
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 소스코드 체크아웃
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+      # 2. 이전 단계에서 만든 JAR 파일 다운로드
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dojangkok-server-jar
+          path: build/libs
+      # 2-1. Dockerfile이 참조하는 경로(루트)로 JAR 복사 및 파일명 고정
+      - name: Rename JAR for Dockerfile
+        run: cp build/libs/*.jar dojangkok-server-jar.jar
+      # 3. ARM 아키텍처로 빌드하기 위한 설정 추가 (amd64 -> arm64 빌드)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      # 4. Docker Buildx 설정 (멀티 플랫폼 빌드)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      # 5. AWS 자격증명 설정 (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # 6. AWS ECR 로그인
+      - name: Login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      # 7. 이미지 빌드 및 ECR로 Push
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64 # t4g 계열 인스턴스에서 사용하기 위함
+          provenance: false # 불필요한 메타데이터 파일 생성을 막음
+          # 6-1. 배포 자동화에 사용하는 버전 (신규 push에 덮어써짐)
+          # 6-2. 이력을 관리하기 위한 목적 (롤백용)
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/dev-dojangkok-be:latest
+            ${{ steps.login-ecr.outputs.registry }}/dev-dojangkok-be:${{ github.sha }}
+          # 빌드 성능 향상을 위한 캐시 설정
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy: # Container Image를 가지고 배포를 수행하는 단계
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 소스코드를 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      # 2. AWS 자격증명 설정 (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      # 3. S3에서 application.yaml 파일 다운로드
+      - name: Download application.yaml from S3
+        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/backend/v2/dev/application-dev.yaml ./application.yaml
+      # 4. Code Deploy에 전달할 artifact 구성
+      - name: Make Zip File for CodeDeploy
+        run: zip -r deploy.zip docker-compose.yml appspec.yml deploy.sh application.yaml
+      # 5. 구성한 artifact S3에 업로드
+      - name: Upload Artifact to S3
+        run: aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET_NAME }}/backend/v2/dev/deploy.zip
+      # 6. CodeDeploy 배포 명령 전달
+      - name: Trigger CodeDeploy
+        run: |
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name dev-dojangkok-v2-be \
+            --deployment-group-name dev-dojangkok-v2-be-dg \
+            --deployment-config-name CodeDeployDefault.AllAtOnce \
+            --s3-location bucket=${{ secrets.S3_BUCKET_NAME }},key=backend/v2/dev/deploy.zip,bundleType=zip \
+            --query "deploymentId" \
+            --output text)
+
+          echo "배포가 시작되었습니다. Deployment ID: $DEPLOYMENT_ID"
+          echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> $GITHUB_ENV
+      # 7. Code Deploy 배포 완료 대기
+      - name: Wait for Deployment Success
+        run: |
+          echo "CodeDeploy 배포 진행 중..."
+          aws deploy wait deployment-successful --deployment-id ${{ env.DEPLOYMENT_ID }}
+      # 8. 배포 후 Health Check
+      - name: Health Check
+        env:
+          SERVICE_URL: ${{ secrets.SERVICE_URL }}
+        run: |
+          echo "Health Check 시작..."
+          MAX_RETRIES=10
+          RETRY_INTERVAL=15
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/actuator/health" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Health Check 성공 (HTTP $HTTP_STATUS)"
+              exit 0
+            fi
+            echo "시도 $i/$MAX_RETRIES: HTTP $HTTP_STATUS - ${RETRY_INTERVAL}초 후 재시도..."
+            sleep $RETRY_INTERVAL
+          done
+          echo "Health Check 실패: 서비스가 응답하지 않습니다."
+          exit 1

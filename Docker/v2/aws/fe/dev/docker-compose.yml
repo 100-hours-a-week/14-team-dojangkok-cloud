@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: ${ECR_REGISTRY}/dojangkok-fe:latest
+    image: ${ECR_REGISTRY}/dev-dojangkok-fe:latest
     container_name: dojangkok-fe
     ports:
       - '3000:3000'

@@ -1,0 +1,33 @@
+# Git
+.git
+.gitattributes
+.github
+
+# Gradle
+.gradle
+gradle
+gradlew
+gradlew.bat
+build.gradle
+settings.gradle
+
+# Build output (dojangkok-server-jar.jar은 빌드 후 루트에 배치됨)
+build
+
+# IDE
+.idea
+
+# Source (런타임에 불필요)
+src
+
+# Docs
+*.md
+
+# Deployment (이미지에 불필요)
+docker-compose.yml
+appspec.yml
+deploy.sh
+
+# OS
+.DS_Store
+Thumbs.db

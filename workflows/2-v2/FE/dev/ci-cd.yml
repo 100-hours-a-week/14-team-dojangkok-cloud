@@ -54,8 +54,6 @@ jobs:
       # 2. Docker Buildx 설정
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker
       # 3. AWS 자격증명 설정 (OIDC)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -68,7 +66,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       # 5. S3에서 .env 파일 다운로드
       - name: Download .env from S3
-        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/.env ./.env
+        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v2/dev/.env ./.env
       # 6. env 파일을 읽어서 GitHub 환경 변수로 등록 (build-args로 넘기기 위함)
       - name: Load .env to GitHub Env
         run: cat .env >> $GITHUB_ENV
@@ -80,7 +78,6 @@ jobs:
           file: Dockerfile
           push: true
           provenance: false # 불필요한 메타데이터 파일 생성을 막음
-          outputs: type=docker,rewrite-config=true
           # 주요 설정값 주입
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
@@ -88,8 +85,11 @@ jobs:
           # 7-1. 배포 자동화에 사용하는 버전 (신규 push에 덮어써짐)
           # 7-2. 이력을 관리하기 위한 목적 (롤백용)
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/dojangkok-fe:latest
-            ${{ steps.login-ecr.outputs.registry }}/dojangkok-fe:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/dev-dojangkok-fe:latest
+            ${{ steps.login-ecr.outputs.registry }}/dev-dojangkok-fe:${{ github.sha }}
+          # 빌드 성능 향상을 위한 캐시 설정
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy: # 배포를 수행하는 단계
     needs: build-and-push-image
@@ -106,21 +106,21 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
       # 3. S3에서 .env 파일 다운로드
       - name: Download .env from S3
-        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/.env ./.env
+        run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v2/dev/.env ./.env
       # 4. Code Deploy에 전달할 artifact 구성
       - name: Make Zip File for CodeDeploy
         run: zip -r deploy.zip docker-compose.yml appspec.yml deploy.sh .env
       # 5. 구성한 artifact S3에 업로드
       - name: Upload Artifact to S3
-        run: aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET_NAME }}/frontend/deploy.zip
+        run: aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v2/dev/deploy.zip
       # 6. CodeDeploy 트리거 (GitHub 대신 S3를 보라고 명시)
       - name: Trigger CodeDeploy
         run: |
           DEPLOYMENT_ID=$(aws deploy create-deployment \
-            --application-name dojangkok-v2-fe \
-            --deployment-group-name dojangkok-v2-fe-dg \
+            --application-name dev-dojangkok-v2-fe \
+            --deployment-group-name dev-dojangkok-v2-fe-dg \
             --deployment-config-name CodeDeployDefault.AllAtOnce \
-            --s3-location bucket=${{ secrets.S3_BUCKET_NAME }},key=frontend/deploy.zip,bundleType=zip \
+            --s3-location bucket=${{ secrets.S3_BUCKET_NAME }},key=frontend/v2/dev/deploy.zip,bundleType=zip \
             --query "deploymentId" \
             --output text)
 

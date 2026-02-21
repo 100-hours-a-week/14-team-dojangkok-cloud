@@ -1,0 +1,14 @@
+services:
+  backend:
+    image: ${ECR_REGISTRY}/dev-dojangkok-be:latest
+    container_name: dojangkok-be
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./application.yaml:/app/config/application.yaml
+    restart: always
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
