@@ -9,7 +9,16 @@ permissions:
 # 워크플로우를 실행할 이벤트 결정 및 매핑
 on:
   push:
-    branches: [test/v2]
+    branches: [dev]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [dev]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 # 실행할 작업을 정의
 jobs:
@@ -43,6 +52,7 @@ jobs:
 
   build-and-push-image: # 빌드 및 Docker Image Push를 수행하는 단계
     needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-24.04-arm # arm64 runner를 사용
     strategy:
       matrix:
@@ -70,7 +80,12 @@ jobs:
       # 6. env 파일을 읽어서 GitHub 환경 변수로 등록 (build-args로 넘기기 위함)
       - name: Load .env to GitHub Env
         run: cat .env >> $GITHUB_ENV
-      # 7. 이미지 빌드 및 ECR로 Push
+      # 7. infra/dev 디렉토리의 Docker 관련 파일을 프로젝트 root로 복사 (.dockerignore 적용을 위해)
+      - name: Copy Docker files
+        run: |
+          cp infra/dev/Dockerfile ./
+          cp infra/dev/.dockerignore ./
+      # 8. 이미지 빌드 및 ECR로 Push
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
@@ -93,6 +108,7 @@ jobs:
 
   deploy: # 배포를 수행하는 단계
     needs: build-and-push-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       # 1. 소스코드를 체크아웃
@@ -109,7 +125,12 @@ jobs:
         run: aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v2/dev/.env ./.env
       # 4. Code Deploy에 전달할 artifact 구성
       - name: Make Zip File for CodeDeploy
-        run: zip -r deploy.zip docker-compose.yml appspec.yml deploy.sh .env
+        run: |
+          cp infra/dev/docker-compose.yml ./
+          cp infra/dev/deploy.sh ./
+          cp infra/dev/appspec.yml ./
+          chmod +x deploy.sh
+          zip -r deploy.zip docker-compose.yml appspec.yml deploy.sh .env
       # 5. 구성한 artifact S3에 업로드
       - name: Upload Artifact to S3
         run: aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v2/dev/deploy.zip
