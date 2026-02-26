@@ -1,0 +1,21 @@
+# vLLM — 볼륨 마운트 방식
+# 모델을 호스트에 사전 다운로드하고 컨테이너에 마운트
+# docker run -v /opt/models:/model-cache ...
+#
+# 장점: 이미지 경량, GAR push/pull 빠름, 모델 교체 유연
+# 단점: 호스트에 모델 다운로드 필요 (startup-script 또는 Packer)
+
+FROM vllm/vllm-openai:v0.15.1
+
+ENV HF_HOME=/model-cache
+ENV HF_HUB_OFFLINE=1
+
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--port", "8001", \
+     "--model", "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct", \
+     "--revision", "e949c91dec92095908d34e6b560af77dd0c993f8", \
+     "--trust-remote-code", \
+     "--enforce-eager", \
+     "--gpu-memory-utilization", "0.85", \
+     "--max-num-seqs", "256", \
+     "--max-model-len", "4096"]

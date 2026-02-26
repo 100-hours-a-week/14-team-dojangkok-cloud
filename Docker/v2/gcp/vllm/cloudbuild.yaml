@@ -1,0 +1,15 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--tag=${_IMAGE}'
+      - '.'
+
+images: ["${_IMAGE}"]
+
+substitutions:
+  _IMAGE: '${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/vllm-repo/vllm-exaone'
+
+options:
+  dynamicSubstitutions: true
+  machineType: "E2_HIGHCPU_32"

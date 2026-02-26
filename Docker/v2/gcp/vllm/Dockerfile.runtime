@@ -1,0 +1,14 @@
+# vLLM — 런타임 다운로드 방식
+# 컨테이너 시작 시 모델을 다운로드한 뒤 서빙
+#
+# 장점: 이미지 경량, 모델 버전 교체 시 재빌드 불필요
+# 단점: 콜드 스타트 느림 (다운로드 시간), HuggingFace 네트워크 의존
+
+FROM vllm/vllm-openai:v0.15.1
+
+ENV HF_HOME=/model-cache
+
+COPY download-and-serve.sh /download-and-serve.sh
+RUN chmod +x /download-and-serve.sh
+
+ENTRYPOINT ["/download-and-serve.sh"]
