@@ -63,25 +63,18 @@ loki.source.docker "containers" {
   targets    = discovery.relabel.docker_labels.output
   forward_to = [loki.write.default.receiver]
   labels     = {
-    job  = "docker",
-    host = "dev-dojangkok-v2-monitor",
+    job     = "docker",
+    host    = "dev-dojangkok-v2-monitor",
+    service = "monitor",
   }
 }
 
 // --- systemd Journal Logs ---
 loki.source.journal "systemd" {
-  forward_to    = [loki.write.default.receiver]
-  relabel_rules = loki.relabel.journal.rules
-  labels        = {
-    job  = "journal",
-    host = "dev-dojangkok-v2-monitor",
-  }
-}
-
-loki.relabel "journal" {
   forward_to = [loki.write.default.receiver]
-  rule {
-    source_labels = ["__journal__systemd_unit"]
-    target_label  = "unit"
+  labels     = {
+    job     = "journal",
+    host    = "dev-dojangkok-v2-monitor",
+    service = "monitor",
   }
 }

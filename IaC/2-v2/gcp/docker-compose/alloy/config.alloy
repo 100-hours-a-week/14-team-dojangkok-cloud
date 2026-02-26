@@ -1,83 +1,86 @@
-// Grafana Alloy — 통합 모니터링 설정 (Terraform templatefile)
-// VM: ${hostname} | Env: ${env} | Service: ${service_name}
+// Grafana Alloy — GCP V2 모니터링 (Terraform templatefile)
+// VM: ${hostname} | Service: ${service_name}
 
-// ==========================================
-// 1. Docker 컨테이너 로그 수집
-// ==========================================
-
-discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
-}
-
-discovery.relabel "docker_logs" {
-  targets = discovery.docker.containers.targets
-
-  // alloy 컨테이너 자체는 제외
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = ".*alloy.*"
-    action        = "drop"
-  }
-
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    target_label  = "container"
+// --- 1. Prometheus Remote Write ---
+prometheus.remote_write "default" {
+  endpoint {
+    url = "${prometheus_url}"
   }
 }
 
-loki.source.docker "containers" {
-  host    = "unix:///var/run/docker.sock"
-  targets = discovery.relabel.docker_logs.output
-
-  labels = {
-    hostname = "${hostname}",
-    env      = "${env}",
-    service  = "${service_name}",
-    source   = "docker",
-  }
-
-  forward_to = [loki.write.default.receiver]
-}
-
-// ==========================================
-// 2. Loki 전송
-// ==========================================
-
+// --- 2. Loki Write ---
 loki.write "default" {
   endpoint {
     url = "${loki_url}"
   }
 }
 
-%{ if enable_app_logs ~}
-// ==========================================
-// 3. 앱 파일 로그 수집 (AI Server only)
-// ==========================================
+// --- 3. Relabel: instance 라벨 ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.default.receiver]
 
-local.file_match "app_logs" {
-  path_targets = [
-    { __path__ = "/var/log/dojangkok/*.log" },
-  ]
+  rule {
+    target_label = "instance"
+    replacement  = "${hostname}"
+  }
+
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
 }
 
-loki.source.file "app_logs" {
-  targets    = local.file_match.app_logs.targets
-  forward_to = [loki.write.default.receiver]
+// --- 4. Node Exporter (Alloy 내장) ---
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
 
-  labels = {
-    hostname = "${hostname}",
-    env      = "${env}",
-    service  = "${service_name}",
-    source   = "file",
-  }
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+%{ if enable_dcgm_exporter ~}
+// --- 5. DCGM GPU Exporter (vLLM only) ---
+prometheus.scrape "dcgm" {
+  targets         = [{ __address__ = "localhost:9400" }]
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
 }
 %{ endif ~}
 
-%{ if enable_otlp ~}
-// ==========================================
-// 4. OTLP 트레이스 수신 + Tempo 전송
-// ==========================================
+// --- 6. Docker 컨테이너 로그 ---
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
 
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_labels.output
+  forward_to = [loki.write.default.receiver]
+
+  labels = {
+    job     = "docker",
+    host    = "${hostname}",
+    service = "${service_name}",
+  }
+}
+
+// --- 7. OTLP 트레이스 → Tempo ---
 otelcol.receiver.otlp "default" {
   grpc {
     endpoint = "0.0.0.0:4317"
@@ -100,4 +103,3 @@ otelcol.exporter.otlp "tempo" {
     }
   }
 }
-%{ endif ~}

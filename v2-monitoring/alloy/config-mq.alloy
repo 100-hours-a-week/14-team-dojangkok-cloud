@@ -45,19 +45,11 @@ prometheus.scrape "node" {
 
 // --- systemd Journal Logs ---
 loki.source.journal "systemd" {
-  forward_to    = [loki.write.default.receiver]
-  relabel_rules = loki.relabel.journal.rules
-  labels        = {
-    job  = "journal",
-    host = "dev-dojangkok-v2-mq",
-  }
-}
-
-loki.relabel "journal" {
   forward_to = [loki.write.default.receiver]
-  rule {
-    source_labels = ["__journal__systemd_unit"]
-    target_label  = "unit"
+  labels     = {
+    job     = "journal",
+    host    = "dev-dojangkok-v2-mq",
+    service = "mq",
   }
 }
 

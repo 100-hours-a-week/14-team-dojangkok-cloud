@@ -45,25 +45,18 @@ prometheus.scrape "node" {
 
 // --- systemd Journal Logs ---
 loki.source.journal "systemd" {
-  forward_to    = [loki.write.default.receiver]
-  relabel_rules = loki.relabel.journal.rules
-  labels        = {
-    job  = "journal",
-    host = "dev-dojangkok-v2-redis",
-  }
-}
-
-loki.relabel "journal" {
   forward_to = [loki.write.default.receiver]
-  rule {
-    source_labels = ["__journal__systemd_unit"]
-    target_label  = "unit"
+  labels     = {
+    job     = "journal",
+    host    = "dev-dojangkok-v2-redis",
+    service = "redis",
   }
 }
 
 // --- Redis Exporter ---
 prometheus.exporter.redis "redis" {
-  redis_addr = "localhost:6379"
+  redis_addr     = "localhost:6379"
+  redis_password = env("REDIS_PASSWORD")
 }
 
 prometheus.scrape "redis" {

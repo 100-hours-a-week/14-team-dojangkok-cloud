@@ -65,7 +65,6 @@ module "workload_identity" {
   project_id           = var.project_id
   pool_id              = "github-pool"
   provider_id          = "github-provider"
-  attribute_condition  = "assertion.repository_owner == '${var.github_org}'"
   service_account_id   = module.github_actions_sa.id
   principal_set_filter = "attribute.repository_owner/${var.github_org}"
 }
@@ -114,7 +113,7 @@ module "artifact_registry" {
 }
 
 # ==========================================
-# 3. Firewall Rules (5개)
+# 3. Firewall Rules
 # ==========================================
 
 # AI Server → vLLM (서브넷 내부)
@@ -133,21 +132,21 @@ module "firewall_ai_to_vllm" {
   priority      = 1000
 }
 
-# AI Server → ChromaDB (서브넷 내부)
-module "firewall_ai_to_chromadb" {
-  source = "../../modules/firewall"
-
-  project_id    = var.project_id
-  firewall_name = "dojangkok-${local.env}-allow-ai-to-chromadb"
-  network       = module.networking.vpc_self_link
-  description   = "Allow AI Server to ChromaDB within VPC"
-  allow_rules = [
-    { protocol = "tcp", ports = ["8000"] }
-  ]
-  source_ranges = ["10.10.0.0/24"]
-  target_tags   = ["chromadb"]
-  priority      = 1000
-}
+# AI Server → ChromaDB (서브넷 내부) — 이번 릴리즈에서 ChromaDB 제외
+# module "firewall_ai_to_chromadb" {
+#   source = "../../modules/firewall"
+#
+#   project_id    = var.project_id
+#   firewall_name = "dojangkok-${local.env}-allow-ai-to-chromadb"
+#   network       = module.networking.vpc_self_link
+#   description   = "Allow AI Server to ChromaDB within VPC"
+#   allow_rules = [
+#     { protocol = "tcp", ports = ["8000"] }
+#   ]
+#   source_ranges = ["10.10.0.0/24"]
+#   target_tags   = ["chromadb"]
+#   priority      = 1000
+# }
 
 # AWS Monitoring → GCP VM
 module "firewall_monitoring" {
@@ -271,9 +270,15 @@ module "ai_server" {
       VLLM_MODEL                     = var.vllm_model
       VLLM_LORA_ADAPTER_CHECKLIST    = var.vllm_lora_adapter_checklist
       VLLM_LORA_ADAPTER_EASYCONTRACT = var.vllm_lora_adapter_easycontract
-      CHROMADB_URL                   = "http://${module.chromadb.internal_ip}:8000"
+      CHROMADB_URL                   = "" # ChromaDB 이번 릴리즈 제외
       BACKEND_CALLBACK_BASE_URL      = var.backend_callback_base_url
       HTTP_TIMEOUT_SEC               = var.http_timeout_sec
+
+      RABBITMQ_ENABLED                           = var.rabbitmq_enabled
+      RABBITMQ_PREFETCH_COUNT                    = var.rabbitmq_prefetch_count
+      RABBITMQ_DECLARE_PASSIVE                   = var.rabbitmq_declare_passive
+      EASY_CONTRACT_CANCEL_TTL_SEC               = var.easy_contract_cancel_ttl_sec
+      EASY_CONTRACT_CANCEL_CLEANUP_INTERVAL_SEC  = var.easy_contract_cancel_cleanup_interval_sec
 
       RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT    = var.rabbitmq_request_exchange_easy_contract
       RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT       = var.rabbitmq_request_queue_easy_contract
@@ -289,13 +294,12 @@ module "ai_server" {
       RABBITMQ_RESULT_ROUTING_KEY                = var.rabbitmq_result_routing_key
     })
     alloy_config = templatefile(local.alloy_config_template, {
-      hostname        = "dojangkok-${local.env}-ai-server"
-      env             = local.env
-      service_name    = "ai-server"
-      loki_url        = var.loki_url
-      enable_app_logs = true
-      enable_otlp     = true
-      tempo_endpoint  = var.tempo_endpoint
+      hostname             = "dojangkok-${local.env}-ai-server"
+      service_name         = "ai-server"
+      loki_url             = var.loki_url
+      tempo_endpoint       = var.tempo_endpoint
+      prometheus_url       = var.prometheus_url
+      enable_dcgm_exporter = false
     })
     ar_host = "asia-northeast3-docker.pkg.dev"
   })
@@ -308,48 +312,7 @@ module "ai_server" {
 }
 
 # ==========================================
-# 6. Compute — ChromaDB (CPU)
-#    Packer CPU 베이스 + docker-compose
-# ==========================================
-module "chromadb" {
-  source = "../../modules/compute"
-
-  project_id    = var.project_id
-  instance_name = "dojangkok-${local.env}-chromadb"
-  machine_type  = var.chromadb_machine_type
-  zone          = var.zone
-
-  boot_disk_image   = var.ai_server_boot_disk_image
-  boot_disk_size_gb = 50
-
-  network    = module.networking.vpc_self_link
-  subnetwork = module.networking.subnet_self_links["main"]
-
-  network_tags          = ["chromadb"]
-  service_account_email = module.github_actions_sa.email
-
-  startup_script = templatefile("${path.module}/scripts/startup-chromadb.sh", {
-    compose_content = file("../../docker-compose/chromadb.yml")
-    alloy_config = templatefile(local.alloy_config_template, {
-      hostname        = "dojangkok-${local.env}-chromadb"
-      env             = local.env
-      service_name    = "chromadb"
-      loki_url        = var.loki_url
-      enable_app_logs = false
-      enable_otlp     = false
-      tempo_endpoint  = var.tempo_endpoint
-    })
-  })
-
-  labels = {
-    environment = local.env
-    service     = "chromadb"
-    managed_by  = "terraform"
-  }
-}
-
-# ==========================================
-# 7. Compute — vLLM (GPU)
+# 6. Compute — vLLM (GPU, Spot L4)
 #    Packer GPU 베이스 + docker-compose
 # ==========================================
 module "vllm" {
@@ -359,10 +322,11 @@ module "vllm" {
   instance_name = "dojangkok-${local.env}-vllm"
   machine_type  = var.vllm_machine_type
   zone          = var.zone
-  gpu_type      = var.vllm_gpu_type
-  gpu_count     = 1
 
-  boot_disk_image   = "dojangkok-gpu-base"
+  gpu_type  = "nvidia-l4"
+  gpu_count = 1
+
+  boot_disk_image   = var.vllm_boot_disk_image
   boot_disk_size_gb = 200
   boot_disk_type    = "pd-ssd"
 
@@ -375,20 +339,21 @@ module "vllm" {
   is_spot_instance = true
 
   startup_script = templatefile("${path.module}/scripts/startup-vllm.sh", {
-    project_id = var.project_id
+    project_id          = var.project_id
+    VLLM_IMAGE          = "${module.artifact_registry.repository_url}/vllm:latest"
+    VLLM_MODEL_REVISION = var.vllm_model_revision
     compose_content = templatefile("../../docker-compose/vllm.yml", {
       VLLM_IMAGE          = "${module.artifact_registry.repository_url}/vllm:latest"
       VLLM_MODEL          = var.vllm_model
       VLLM_MODEL_REVISION = var.vllm_model_revision
     })
     alloy_config = templatefile(local.alloy_config_template, {
-      hostname        = "dojangkok-${local.env}-vllm"
-      env             = local.env
-      service_name    = "vllm"
-      loki_url        = var.loki_url
-      enable_app_logs = false
-      enable_otlp     = true
-      tempo_endpoint  = var.tempo_endpoint
+      hostname             = "dojangkok-${local.env}-vllm"
+      service_name         = "vllm"
+      loki_url             = var.loki_url
+      tempo_endpoint       = var.tempo_endpoint
+      prometheus_url       = var.prometheus_url
+      enable_dcgm_exporter = true
     })
   })
 
@@ -398,3 +363,44 @@ module "vllm" {
     managed_by  = "terraform"
   }
 }
+
+# ==========================================
+# 7. Compute — ChromaDB (CPU) — 이번 릴리즈에서 제외
+# ==========================================
+# module "chromadb" {
+#   source = "../../modules/compute"
+#
+#   project_id    = var.project_id
+#   instance_name = "dojangkok-${local.env}-chromadb"
+#   machine_type  = var.chromadb_machine_type
+#   zone          = var.zone
+#
+#   boot_disk_image   = var.ai_server_boot_disk_image
+#   boot_disk_size_gb = 50
+#
+#   network    = module.networking.vpc_self_link
+#   subnetwork = module.networking.subnet_self_links["main"]
+#
+#   network_tags          = ["chromadb"]
+#   service_account_email = module.github_actions_sa.email
+#
+#   startup_script = templatefile("${path.module}/scripts/startup-chromadb.sh", {
+#     compose_content = file("../../docker-compose/chromadb.yml")
+#     alloy_config = templatefile(local.alloy_config_template, {
+#       hostname             = "dojangkok-${local.env}-chromadb"
+#       env                  = local.env
+#       service_name         = "chromadb"
+#       loki_url             = var.loki_url
+#       tempo_endpoint       = var.tempo_endpoint
+#       prometheus_url       = var.prometheus_url
+#       enable_dcgm_exporter = false
+#     })
+#   })
+#
+#   labels = {
+#     environment = local.env
+#     service     = "chromadb"
+#     managed_by  = "terraform"
+#   }
+# }
+
