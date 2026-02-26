@@ -1,0 +1,26 @@
+# === Dev Environment Variables ===
+
+# IAM instance profiles (from shared state output: iam_instance_profile_names)
+iam_instance_profile_names = {
+  be           = "dojangkok-v2-be-role"
+  fe           = "dojangkok-v2-fe-role"
+  mq           = "dojangkok-v2-mq-role"
+  mysql        = "dojangkok-v2-mysql-role"
+  nat-instance = "dojangkok-v2-nat-instance-role"
+  redis        = "dojangkok-v2-redis-role"
+}
+
+# GCP NAT IP (for NLB security group allowing GCP -> AWS MQ traffic)
+gcp_nat_ip = "<GCP_NAT_IP>"
+
+# ACM Certificate ARN (from shared state output)
+ssl_certificate_arn = "arn:aws:acm:ap-northeast-2:<AWS_ACCOUNT_ID>:certificate/xxx"
+
+# CloudFront ACM (us-east-1, from shared state output)
+cloudfront_acm_arn = "arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID>:certificate/xxx"
+
+# Landing page S3 bucket domain (from shared state output)
+landing_page_bucket_domain = "dojangkok-landing-page.s3.ap-northeast-2.amazonaws.com"
+
+# Monitoring source CIDRs (optional, for cross-VPC monitoring)
+monitoring_source_cidrs = []
