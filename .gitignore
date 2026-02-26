@@ -45,3 +45,17 @@ ehthumbs.db
 *.key
 credentials.json
 service-account*.json
+
+# ============================
+# Environment Variables
+# ============================
+.env
+.env.local
+.env.*.local
+
+# ============================
+# Terraform Plans (may contain sensitive values)
+# ============================
+*.tfplan
+*.plan
+*.tfplan.json
