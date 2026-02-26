@@ -5,7 +5,8 @@
 # ==============================================
 
 locals {
-  env = "dev"
+  env                   = "dev"
+  alloy_config_template = "../../docker-compose/alloy/config.alloy"
 }
 
 # ==========================================
@@ -46,9 +47,9 @@ module "networking" {
 module "github_actions_sa" {
   source = "../../modules/service-account"
 
-  project_id            = var.project_id
-  account_id            = "github-actions-sa"
-  display_name          = "GitHub Actions Service Account"
+  project_id               = var.project_id
+  account_id               = "github-actions-sa"
+  display_name             = "GitHub Actions Service Account"
   enable_compute_admin     = true
   enable_iap_tunnel        = true
   enable_sa_user           = true
@@ -70,7 +71,31 @@ module "workload_identity" {
 }
 
 # ==========================================
-# 2-1. Artifact Registry (Docker 저장소)
+# 2-1. Secret Manager (시크릿 관리)
+# ==========================================
+module "secrets" {
+  source = "../../modules/secret-manager"
+
+  project_id = var.project_id
+  secret_ids = toset([
+    "dojangkok-vllm-api-key",
+    "dojangkok-backend-internal-token",
+    "dojangkok-ocr-api",
+    "dojangkok-rabbitmq-url",
+  ])
+  secret_values = {
+    "dojangkok-vllm-api-key"           = var.vllm_api_key
+    "dojangkok-backend-internal-token" = var.backend_internal_token
+    "dojangkok-ocr-api"                = var.ocr_api
+    "dojangkok-rabbitmq-url"           = var.rabbitmq_url
+  }
+  accessor_sa_email = module.github_actions_sa.email
+
+  depends_on = [module.project_setup]
+}
+
+# ==========================================
+# 2-2. Artifact Registry (Docker 저장소)
 # ==========================================
 module "artifact_registry" {
   source = "../../modules/artifact-registry"
@@ -117,7 +142,7 @@ module "firewall_ai_to_chromadb" {
   network       = module.networking.vpc_self_link
   description   = "Allow AI Server to ChromaDB within VPC"
   allow_rules = [
-    { protocol = "tcp", ports = ["8100"] }
+    { protocol = "tcp", ports = ["8000"] }
   ]
   source_ranges = ["10.10.0.0/24"]
   target_tags   = ["chromadb"]
@@ -172,6 +197,22 @@ module "firewall_internal" {
   priority      = 1100
 }
 
+# GCP Health Check Probes → AI Server (MIG auto-healing용)
+module "firewall_health_check" {
+  source = "../../modules/firewall"
+
+  project_id    = var.project_id
+  firewall_name = "dojangkok-${local.env}-allow-health-check"
+  network       = module.networking.vpc_self_link
+  description   = "Allow GCP health check probes to AI Server"
+  allow_rules = [
+    { protocol = "tcp", ports = ["8000"] }
+  ]
+  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
+  target_tags   = ["ai-server"]
+  priority      = 1000
+}
+
 # ==========================================
 # 4. Health Check (MIG auto-healing용, LB 없이 독립)
 # ==========================================
@@ -217,22 +258,44 @@ module "ai_server" {
   service_account_email = module.github_actions_sa.email
 
   # Packer 이미지 + startup_script 모드 (COS 제거)
-  boot_disk_image = var.ai_server_boot_disk_image
+  boot_disk_image   = var.ai_server_boot_disk_image
+  boot_disk_size_gb = 50
+  boot_disk_type    = "pd-standard"
 
   startup_script = templatefile("${path.module}/scripts/startup-ai-server.sh", {
+    project_id = var.project_id
     compose_content = templatefile("../../docker-compose/ai-server.yml", {
-      AI_SERVER_IMAGE            = "${module.artifact_registry.repository_url}/ai-server:latest"
-      APP_ENV                    = local.env
-      VLLM_BASE_URL              = "http://${module.vllm.internal_ip}:8001/v1"
-      VLLM_API_KEY               = var.vllm_api_key
-      VLLM_MODEL                 = var.vllm_model
-      VLLM_LORA_ADAPTER_CHECKLIST   = var.vllm_lora_adapter_checklist
+      AI_SERVER_IMAGE                = "${module.artifact_registry.repository_url}/ai-server:latest"
+      APP_ENV                        = local.env
+      VLLM_BASE_URL                  = "http://${module.vllm.internal_ip}:8001/v1"
+      VLLM_MODEL                     = var.vllm_model
+      VLLM_LORA_ADAPTER_CHECKLIST    = var.vllm_lora_adapter_checklist
       VLLM_LORA_ADAPTER_EASYCONTRACT = var.vllm_lora_adapter_easycontract
-      CHROMADB_URL               = "http://${module.chromadb.internal_ip}:8100"
-      BACKEND_CALLBACK_BASE_URL  = var.backend_callback_base_url
-      BACKEND_INTERNAL_TOKEN     = var.backend_internal_token
-      OCR_API                    = var.ocr_api
-      HTTP_TIMEOUT_SEC           = var.http_timeout_sec
+      CHROMADB_URL                   = "http://${module.chromadb.internal_ip}:8000"
+      BACKEND_CALLBACK_BASE_URL      = var.backend_callback_base_url
+      HTTP_TIMEOUT_SEC               = var.http_timeout_sec
+
+      RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT    = var.rabbitmq_request_exchange_easy_contract
+      RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT       = var.rabbitmq_request_queue_easy_contract
+      RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT = var.rabbitmq_request_routing_key_easy_contract
+      RABBITMQ_REQUEST_EXCHANGE_CHECKLIST        = var.rabbitmq_request_exchange_checklist
+      RABBITMQ_REQUEST_QUEUE_CHECKLIST           = var.rabbitmq_request_queue_checklist
+      RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST     = var.rabbitmq_request_routing_key_checklist
+      RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT     = var.rabbitmq_cancel_exchange_easy_contract
+      RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT        = var.rabbitmq_cancel_queue_easy_contract
+      RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT  = var.rabbitmq_cancel_routing_key_easy_contract
+      RABBITMQ_RESULT_EXCHANGE                   = var.rabbitmq_result_exchange
+      RABBITMQ_RESULT_QUEUE                      = var.rabbitmq_result_queue
+      RABBITMQ_RESULT_ROUTING_KEY                = var.rabbitmq_result_routing_key
+    })
+    alloy_config = templatefile(local.alloy_config_template, {
+      hostname        = "dojangkok-${local.env}-ai-server"
+      env             = local.env
+      service_name    = "ai-server"
+      loki_url        = var.loki_url
+      enable_app_logs = true
+      enable_otlp     = true
+      tempo_endpoint  = var.tempo_endpoint
     })
     ar_host = "asia-northeast3-docker.pkg.dev"
   })
@@ -246,6 +309,7 @@ module "ai_server" {
 
 # ==========================================
 # 6. Compute — ChromaDB (CPU)
+#    Packer CPU 베이스 + docker-compose
 # ==========================================
 module "chromadb" {
   source = "../../modules/compute"
@@ -255,6 +319,7 @@ module "chromadb" {
   machine_type  = var.chromadb_machine_type
   zone          = var.zone
 
+  boot_disk_image   = var.ai_server_boot_disk_image
   boot_disk_size_gb = 50
 
   network    = module.networking.vpc_self_link
@@ -263,8 +328,18 @@ module "chromadb" {
   network_tags          = ["chromadb"]
   service_account_email = module.github_actions_sa.email
 
-  # 컨테이너 모드 (COS)
-  container_image = "chromadb/chroma:latest"
+  startup_script = templatefile("${path.module}/scripts/startup-chromadb.sh", {
+    compose_content = file("../../docker-compose/chromadb.yml")
+    alloy_config = templatefile(local.alloy_config_template, {
+      hostname        = "dojangkok-${local.env}-chromadb"
+      env             = local.env
+      service_name    = "chromadb"
+      loki_url        = var.loki_url
+      enable_app_logs = false
+      enable_otlp     = false
+      tempo_endpoint  = var.tempo_endpoint
+    })
+  })
 
   labels = {
     environment = local.env
@@ -275,6 +350,7 @@ module "chromadb" {
 
 # ==========================================
 # 7. Compute — vLLM (GPU)
+#    Packer GPU 베이스 + docker-compose
 # ==========================================
 module "vllm" {
   source = "../../modules/gpu-compute"
@@ -286,7 +362,7 @@ module "vllm" {
   gpu_type      = var.vllm_gpu_type
   gpu_count     = 1
 
-  boot_disk_image   = var.vllm_boot_disk_image
+  boot_disk_image   = "dojangkok-gpu-base"
   boot_disk_size_gb = 200
   boot_disk_type    = "pd-ssd"
 
@@ -296,8 +372,25 @@ module "vllm" {
   network_tags          = ["vllm", "dojangkok-monitoring"]
   service_account_email = module.github_actions_sa.email
 
-  # 컨테이너 모드 (Docker + nvidia-toolkit)
-  container_image = "${module.artifact_registry.repository_url}/vllm:latest"
+  is_spot_instance = true
+
+  startup_script = templatefile("${path.module}/scripts/startup-vllm.sh", {
+    project_id = var.project_id
+    compose_content = templatefile("../../docker-compose/vllm.yml", {
+      VLLM_IMAGE          = "${module.artifact_registry.repository_url}/vllm:latest"
+      VLLM_MODEL          = var.vllm_model
+      VLLM_MODEL_REVISION = var.vllm_model_revision
+    })
+    alloy_config = templatefile(local.alloy_config_template, {
+      hostname        = "dojangkok-${local.env}-vllm"
+      env             = local.env
+      service_name    = "vllm"
+      loki_url        = var.loki_url
+      enable_app_logs = false
+      enable_otlp     = true
+      tempo_endpoint  = var.tempo_endpoint
+    })
+  })
 
   labels = {
     environment = local.env

@@ -70,7 +70,29 @@ module "workload_identity" {
 }
 
 # ==========================================
-# 2-1. Artifact Registry (Docker 저장소)
+# 2-1. Secret Manager (시크릿 관리)
+# ==========================================
+module "secrets" {
+  source = "../../modules/secret-manager"
+
+  project_id = var.project_id
+  secret_ids = toset([
+    "dojangkok-vllm-api-key",
+    "dojangkok-backend-internal-token",
+    "dojangkok-ocr-api",
+  ])
+  secret_values = {
+    "dojangkok-vllm-api-key"          = var.vllm_api_key
+    "dojangkok-backend-internal-token" = var.backend_internal_token
+    "dojangkok-ocr-api"               = var.ocr_api
+  }
+  accessor_sa_email = module.github_actions_sa.email
+
+  depends_on = [module.project_setup]
+}
+
+# ==========================================
+# 2-2. Artifact Registry (Docker 저장소)
 # ==========================================
 module "artifact_registry" {
   source = "../../modules/artifact-registry"
@@ -220,19 +242,17 @@ module "ai_server" {
   boot_disk_image = var.ai_server_boot_disk_image
 
   startup_script = templatefile("${path.module}/scripts/startup-ai-server.sh", {
+    project_id = var.project_id
     compose_content = templatefile("../../docker-compose/ai-server.yml", {
-      AI_SERVER_IMAGE            = "${module.artifact_registry.repository_url}/ai-server:latest"
-      APP_ENV                    = local.env
-      VLLM_BASE_URL              = "http://${module.vllm.internal_ip}:8001/v1"
-      VLLM_API_KEY               = var.vllm_api_key
-      VLLM_MODEL                 = var.vllm_model
-      VLLM_LORA_ADAPTER_CHECKLIST   = var.vllm_lora_adapter_checklist
+      AI_SERVER_IMAGE                = "${module.artifact_registry.repository_url}/ai-server:latest"
+      APP_ENV                        = local.env
+      VLLM_BASE_URL                  = "http://${module.vllm.internal_ip}:8001/v1"
+      VLLM_MODEL                     = var.vllm_model
+      VLLM_LORA_ADAPTER_CHECKLIST    = var.vllm_lora_adapter_checklist
       VLLM_LORA_ADAPTER_EASYCONTRACT = var.vllm_lora_adapter_easycontract
-      CHROMADB_URL               = "http://${module.chromadb.internal_ip}:8100"
-      BACKEND_CALLBACK_BASE_URL  = var.backend_callback_base_url
-      BACKEND_INTERNAL_TOKEN     = var.backend_internal_token
-      OCR_API                    = var.ocr_api
-      HTTP_TIMEOUT_SEC           = var.http_timeout_sec
+      CHROMADB_URL                   = "http://${module.chromadb.internal_ip}:8100"
+      BACKEND_CALLBACK_BASE_URL      = var.backend_callback_base_url
+      HTTP_TIMEOUT_SEC               = var.http_timeout_sec
     })
     ar_host = "asia-northeast3-docker.pkg.dev"
   })

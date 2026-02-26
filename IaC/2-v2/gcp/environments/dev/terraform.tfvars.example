@@ -13,3 +13,13 @@ github_org = "100-hours-a-week"
 
 # AWS Monitoring IP (Prometheus EIP)
 monitoring_source_ips = ["0.0.0.0/0"]  # TODO: 실제 AWS Monitoring EIP로 변경 (예: ["15.165.80.197/32"])
+
+# RabbitMQ (exchange/queue/routing_key는 default 값 사용 가능, 변경 시 아래 주석 해제)
+# rabbitmq_url = "amqps://user:pass@mq.dojangkok.cloud:5671/"
+# rabbitmq_request_exchange_easy_contract    = "dev.easy.req.ex"
+# rabbitmq_request_queue_easy_contract       = "dev.easy.req.q"
+# rabbitmq_request_routing_key_easy_contract = "easy.create"
+
+# Alloy → Loki/Tempo
+loki_url       = ""  # 예: "http://15.165.80.197:3100/loki/api/v1/push"
+tempo_endpoint = ""  # 예: "15.165.80.197:4317"

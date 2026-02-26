@@ -11,6 +11,9 @@ source "googlecompute" "gpu-base" {
   disk_size           = 200
   disk_type           = "pd-ssd"
 
+  # IAP 터널을 통한 SSH (외부 SSH 방화벽 불필요)
+  use_iap             = true
+
   accelerator_type    = "projects/${var.project_id}/zones/${var.zone}/acceleratorTypes/nvidia-l4"
   accelerator_count   = 1
   on_host_maintenance = "TERMINATE"

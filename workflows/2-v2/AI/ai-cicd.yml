@@ -18,9 +18,347 @@
 #     WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT,
 #     GCP_PROJECT_ID, AR_REPO, MIG_NAME, GCP_ZONE
 
+name: AI Server CI/CD (v2)
 
+concurrency:
+  group: ai-server-v2-${{ github.ref }}
+  cancel-in-progress: true
 
+on:
+  push:
+    branches: [dev, main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [dev, main]
+    paths-ignore:
+      - '.github/workflows/**'
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy environment'
+        required: true
+        default: '2-v2-dev'
+        type: choice
+        options:
+          - 2-v2-dev
+          - 2-v2-prod
 
+env:
+  PYTHON_VERSION: "3.10"
+  GCP_REGION: "asia-northeast3"
+  AR_HOST: "asia-northeast3-docker.pkg.dev"
+
+jobs:
+  # ============================================
+  # 환경 결정
+  # ============================================
+  set-env:
+    name: Set Environment
+    runs-on: ubuntu-22.04
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      should_deploy: ${{ steps.env.outputs.should_deploy }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
+    steps:
+      - name: Determine Environment
+        id: env
+        run: |
+          SHA_SHORT="${GITHUB_SHA::7}"
+          echo "image_tag=$SHA_SHORT" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            if [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+              echo "environment=2-v2-dev" >> $GITHUB_OUTPUT
+            else
+              echo "environment=2-v2-prod" >> $GITHUB_OUTPUT
+            fi
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            # PR: lint-test만 실행
+            echo "environment=" >> $GITHUB_OUTPUT
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================
+  # CI: Lint & Test
+  # ============================================
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run Ruff Linter
+        run: ruff check . || echo "::warning::Lint errors found (non-blocking)"
+
+      - name: Run Ruff Formatter Check
+        run: ruff format --check . || echo "::warning::Format issues found (non-blocking)"
+
+      - name: Run Tests
+        run: |
+          if [ -d "tests" ]; then
+            uv run pytest tests/ -v --cov=. --cov-report=xml
+          else
+            echo "No tests directory found, skipping tests"
+          fi
+
+  # ============================================
+  # CI/CD: Docker Build → GAR Push
+  # ============================================
+  build-push:
+    name: Build & Push to GAR
+    if: needs.set-env.outputs.should_deploy == 'true'
+    needs: [set-env, lint-test]
+    runs-on: ubuntu-22.04
+    environment: ${{ needs.set-env.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker ${{ env.AR_HOST }} --quiet
+
+      - name: Build & Push Docker Image
+        id: build
+        run: |
+          IMAGE_BASE="${{ env.AR_HOST }}/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPO }}/ai-server"
+          TAG="${{ needs.set-env.outputs.image_tag }}"
+
+          echo "Building image: $IMAGE_BASE:$TAG"
+
+          docker build \
+            -t "$IMAGE_BASE:$TAG" \
+            -t "$IMAGE_BASE:latest" \
+            -f Dockerfile .
+
+          docker push "$IMAGE_BASE:$TAG"
+          docker push "$IMAGE_BASE:latest"
+
+          echo "image_uri=$IMAGE_BASE:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Image Summary
+        run: |
+          echo "### Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Also tagged**: latest" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # CD: MIG Rolling Update
+  # ============================================
+  deploy:
+    name: Deploy (MIG Rolling Update)
+    if: needs.set-env.outputs.should_deploy == 'true'
+    needs: [set-env, build-push]
+    runs-on: ubuntu-22.04
+    environment: ${{ needs.set-env.outputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Get Current Instance Template
+        id: current
+        run: |
+          TEMPLATE=$(gcloud compute instance-groups managed describe ${{ secrets.MIG_NAME }} \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='get(instanceTemplate)')
+
+          # 전체 URL → 이름만 추출
+          TEMPLATE_NAME=$(echo "$TEMPLATE" | rev | cut -d'/' -f1 | rev)
+          echo "template_name=$TEMPLATE_NAME" >> $GITHUB_OUTPUT
+          echo "Current template: $TEMPLATE_NAME"
+
+      - name: Create New Instance Template
+        id: new_template
+        run: |
+          TAG="${{ needs.set-env.outputs.image_tag }}"
+          CURRENT_TPL="${{ steps.current.outputs.template_name }}"
+          NEW_TEMPLATE="${{ secrets.MIG_NAME }}-${TAG}"
+          echo "new_template=$NEW_TEMPLATE" >> $GITHUB_OUTPUT
+
+          # startup-script를 파일로 추출 (--metadata-from-file 사용)
+          gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.metadata.items.filter(key="startup-script").extract(value).flatten())' > /tmp/startup.sh
+
+          # 현재 템플릿 속성 추출
+          MACHINE_TYPE=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.machineType)')
+          DISK_SIZE=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.disks[0].initializeParams.diskSizeGb)')
+          DISK_TYPE=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.disks[0].initializeParams.diskType)')
+          SOURCE_IMAGE=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.disks[0].initializeParams.sourceImage)')
+          SUBNET=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.networkInterfaces[0].subnetwork)')
+          SA_EMAIL=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(properties.serviceAccounts[0].email)')
+          TAGS=$(gcloud compute instance-templates describe "$CURRENT_TPL" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='csv[no-heading](properties.tags.items)' | tr ';' ',')
+
+          # sourceImage 경로 파싱: family/ 포함 시 --image-family, 아니면 --image
+          if echo "$SOURCE_IMAGE" | grep -q '/family/'; then
+            IMAGE_FLAG="--image-family=$(echo "$SOURCE_IMAGE" | sed 's|.*/family/||')"
+          else
+            IMAGE_FLAG="--image=$(echo "$SOURCE_IMAGE" | sed 's|.*/images/||')"
+          fi
+
+          echo "Extracted from $CURRENT_TPL:"
+          echo "  machineType=$MACHINE_TYPE, diskSize=$DISK_SIZE, diskType=$DISK_TYPE"
+          echo "  sourceImage=$SOURCE_IMAGE → $IMAGE_FLAG"
+          echo "  subnet=$SUBNET, sa=$SA_EMAIL, tags=$TAGS"
+
+          gcloud compute instance-templates create "$NEW_TEMPLATE" \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --machine-type="$MACHINE_TYPE" \
+            --boot-disk-size="${DISK_SIZE}GB" \
+            --boot-disk-type="$DISK_TYPE" \
+            $IMAGE_FLAG \
+            --subnet="$SUBNET" \
+            --no-address \
+            --service-account="$SA_EMAIL" \
+            --scopes=cloud-platform \
+            --tags="$TAGS" \
+            --metadata=enable-oslogin=TRUE \
+            --metadata-from-file=startup-script=/tmp/startup.sh
+
+          echo "Created template: $NEW_TEMPLATE"
+
+      - name: Start MIG Rolling Update
+        run: |
+          echo "Starting rolling update..."
+          gcloud compute instance-groups managed rolling-action start-update \
+            ${{ secrets.MIG_NAME }} \
+            --version=template=${{ steps.new_template.outputs.new_template }} \
+            --max-surge=1 \
+            --max-unavailable=0 \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Wait for Rollout
+        run: |
+          echo "Waiting for MIG rollout to complete..."
+          gcloud compute instance-groups managed wait-until ${{ secrets.MIG_NAME }} \
+            --version-target-reached \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --timeout=600
+
+          echo "Rollout completed successfully"
+
+      - name: Health Check (via IAP)
+        id: healthcheck
+        run: |
+          # MIG의 인스턴스 이름 획득
+          INSTANCE=$(gcloud compute instance-groups managed list-instances \
+            ${{ secrets.MIG_NAME }} \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --format='value(instance)' | head -1)
+
+          echo "Checking instance: $INSTANCE"
+
+          for i in {1..12}; do
+            RESULT=$(gcloud compute ssh "$INSTANCE" \
+              --zone=${{ secrets.GCP_ZONE }} \
+              --project=${{ secrets.GCP_PROJECT_ID }} \
+              --tunnel-through-iap \
+              --command='curl -sf http://localhost:8000/health' 2>/dev/null || echo "")
+
+            if [ -n "$RESULT" ]; then
+              echo "Health check passed: $RESULT"
+              echo "status=success" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Attempt $i/12 — waiting 10s..."
+            sleep 10
+          done
+
+          echo "::warning::Health check did not pass within timeout"
+          echo "status=timeout" >> $GITHUB_OUTPUT
+
+      - name: Cleanup Old Templates
+        if: always()
+        run: |
+          # 최신 3개 제외, 나머지 오래된 템플릿 정리
+          OLD_TEMPLATES=$(gcloud compute instance-templates list \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --filter="name~'^${{ secrets.MIG_NAME }}-'" \
+            --sort-by=~creationTimestamp \
+            --format='value(name)' | tail -n +4)
+
+          for TPL in $OLD_TEMPLATES; do
+            echo "Deleting old template: $TPL"
+            gcloud compute instance-templates delete "$TPL" \
+              --project=${{ secrets.GCP_PROJECT_ID }} --quiet || true
+          done
+
+      - name: Deploy Summary
+        if: always()
+        run: |
+          echo "### Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ needs.set-env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ needs.build-push.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Template**: ${{ steps.new_template.outputs.new_template }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **MIG**: ${{ secrets.MIG_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health**: ${{ steps.healthcheck.outputs.status || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
 
 # ============================================
 # 향후 확장 포인트

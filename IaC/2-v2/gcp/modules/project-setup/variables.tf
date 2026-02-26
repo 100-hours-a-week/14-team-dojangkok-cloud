@@ -12,5 +12,6 @@ variable "enabled_apis" {
     "iap.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "artifactregistry.googleapis.com",
+    "secretmanager.googleapis.com",
   ]
 }
