@@ -1,0 +1,109 @@
+// =============================================================================
+// Grafana Alloy config — Frontend
+// =============================================================================
+
+// --- Remote Write: Prometheus ---
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:9090/api/v1/write"
+  }
+}
+
+// --- Remote Write: Loki ---
+loki.write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:3100/loki/api/v1/push"
+  }
+}
+
+// --- Relabel: set instance name ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.default.receiver]
+  rule {
+    target_label = "instance"
+    replacement  = "INSTANCE_LABEL"
+  }
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
+}
+
+// --- Node Exporter ---
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// --- Docker Logs ---
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_labels.output
+  forward_to = [loki.write.default.receiver]
+  labels     = {
+    job  = "docker",
+    host = "INSTANCE_LABEL",
+  }
+}
+
+// --- systemd Journal Logs ---
+loki.source.journal "systemd" {
+  forward_to    = [loki.write.default.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {
+    job  = "journal",
+    host = "INSTANCE_LABEL",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = [loki.write.default.receiver]
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+}
+
+// --- OTLP Receiver (Application Traces) ---
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "MONITOR_IP_PLACEHOLDER:4317"
+    tls {
+      insecure             = true
+      insecure_skip_verify = true
+    }
+  }
+}

@@ -126,6 +126,12 @@ variable "custom_ami_id" {
   default     = ""
 }
 
+# Alloy config S3 bucket
+variable "alloy_config_s3_bucket" {
+  type    = string
+  default = "ktb-team14-dojangkok-deploy"
+}
+
 # CodeDeploy
 variable "codedeploy_role_arn" {
   type        = string

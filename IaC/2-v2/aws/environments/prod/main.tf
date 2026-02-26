@@ -290,6 +290,15 @@ module "fe_asg" {
     module.networking.private_subnet_ids["fe-2c"],
   ]
   target_group_arns = [module.alb.target_group_arns["fe"]]
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+    TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    PRIVATE_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+    aws s3 cp s3://${var.alloy_config_s3_bucket}/alloy-configs/fe.alloy /etc/alloy/config.alloy --region ${var.region}
+    sed -i "s/INSTANCE_LABEL/${var.project_name}-fe-$${PRIVATE_IP}/g" /etc/alloy/config.alloy
+    systemctl restart alloy
+  EOF
 }
 
 module "be_asg" {
@@ -307,6 +316,15 @@ module "be_asg" {
     module.networking.private_subnet_ids["be-2c"],
   ]
   target_group_arns = [module.alb.target_group_arns["be"]]
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+    TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    PRIVATE_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+    aws s3 cp s3://${var.alloy_config_s3_bucket}/alloy-configs/be.alloy /etc/alloy/config.alloy --region ${var.region}
+    sed -i "s/INSTANCE_LABEL/${var.project_name}-be-$${PRIVATE_IP}/g" /etc/alloy/config.alloy
+    systemctl restart alloy
+  EOF
 }
 
 # --- CodeDeploy (Blue/Green) ---

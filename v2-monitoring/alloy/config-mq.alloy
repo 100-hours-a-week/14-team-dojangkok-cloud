@@ -1,0 +1,72 @@
+// =============================================================================
+// Grafana Alloy config — RabbitMQ
+// =============================================================================
+
+// --- Remote Write: Prometheus ---
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:9090/api/v1/write"
+  }
+}
+
+// --- Remote Write: Loki ---
+loki.write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:3100/loki/api/v1/push"
+  }
+}
+
+// --- Relabel: set instance name ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.default.receiver]
+  rule {
+    target_label = "instance"
+    replacement  = "dev-dojangkok-v2-mq"
+  }
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
+}
+
+// --- Node Exporter ---
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// --- systemd Journal Logs ---
+loki.source.journal "systemd" {
+  forward_to    = [loki.write.default.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {
+    job  = "journal",
+    host = "dev-dojangkok-v2-mq",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = [loki.write.default.receiver]
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+}
+
+// --- RabbitMQ Metrics ---
+// RabbitMQ 3.8+ built-in Prometheus plugin at port 15692
+prometheus.scrape "rabbitmq" {
+  targets = [{
+    __address__ = "localhost:15692",
+  }]
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+}

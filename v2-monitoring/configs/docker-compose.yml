@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    network_mode: host
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.4.2
+    network_mode: host
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    network_mode: host
+    command:
+      - "-config.file=/etc/tempo/config.yml"
+    volumes:
+      - ./tempo-config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/var/tempo
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    network_mode: host
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  loki_data:
+  tempo_data:
+  grafana_data:
