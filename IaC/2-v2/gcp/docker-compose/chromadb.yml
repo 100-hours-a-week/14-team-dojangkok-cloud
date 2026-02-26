@@ -1,0 +1,33 @@
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    network_mode: host
+    volumes:
+      - chromadb-data:/chroma/chroma
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/app/config.alloy:/etc/alloy/config.alloy:ro
+    command: ["run", "/etc/alloy/config.alloy"]
+    restart: unless-stopped
+
+volumes:
+  chromadb-data:

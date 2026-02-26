@@ -1,0 +1,103 @@
+// Grafana Alloy — 통합 모니터링 설정 (Terraform templatefile)
+// VM: ${hostname} | Env: ${env} | Service: ${service_name}
+
+// ==========================================
+// 1. Docker 컨테이너 로그 수집
+// ==========================================
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  // alloy 컨테이너 자체는 제외
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = ".*alloy.*"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host    = "unix:///var/run/docker.sock"
+  targets = discovery.relabel.docker_logs.output
+
+  labels = {
+    hostname = "${hostname}",
+    env      = "${env}",
+    service  = "${service_name}",
+    source   = "docker",
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+// ==========================================
+// 2. Loki 전송
+// ==========================================
+
+loki.write "default" {
+  endpoint {
+    url = "${loki_url}"
+  }
+}
+
+%{ if enable_app_logs ~}
+// ==========================================
+// 3. 앱 파일 로그 수집 (AI Server only)
+// ==========================================
+
+local.file_match "app_logs" {
+  path_targets = [
+    { __path__ = "/var/log/dojangkok/*.log" },
+  ]
+}
+
+loki.source.file "app_logs" {
+  targets    = local.file_match.app_logs.targets
+  forward_to = [loki.write.default.receiver]
+
+  labels = {
+    hostname = "${hostname}",
+    env      = "${env}",
+    service  = "${service_name}",
+    source   = "file",
+  }
+}
+%{ endif ~}
+
+%{ if enable_otlp ~}
+// ==========================================
+// 4. OTLP 트레이스 수신 + Tempo 전송
+// ==========================================
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "${tempo_endpoint}"
+
+    tls {
+      insecure = true
+    }
+  }
+}
+%{ endif ~}

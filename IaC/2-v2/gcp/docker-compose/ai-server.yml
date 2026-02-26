@@ -1,0 +1,51 @@
+services:
+  ai-server:
+    image: ${AI_SERVER_IMAGE}
+    network_mode: host
+    env_file: [.env]
+    environment:
+      APP_ENV: ${APP_ENV}
+      VLLM_BASE_URL: ${VLLM_BASE_URL}
+      VLLM_MODEL: ${VLLM_MODEL}
+      VLLM_LORA_ADAPTER_CHECKLIST: ${VLLM_LORA_ADAPTER_CHECKLIST}
+      VLLM_LORA_ADAPTER_EASYCONTRACT: ${VLLM_LORA_ADAPTER_EASYCONTRACT}
+      CHROMADB_URL: ${CHROMADB_URL}
+      BACKEND_CALLBACK_BASE_URL: ${BACKEND_CALLBACK_BASE_URL}
+      HTTP_TIMEOUT_SEC: ${HTTP_TIMEOUT_SEC}
+      RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT: ${RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT}
+      RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT: ${RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT}
+      RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT: ${RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT}
+      RABBITMQ_REQUEST_EXCHANGE_CHECKLIST: ${RABBITMQ_REQUEST_EXCHANGE_CHECKLIST}
+      RABBITMQ_REQUEST_QUEUE_CHECKLIST: ${RABBITMQ_REQUEST_QUEUE_CHECKLIST}
+      RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST: ${RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST}
+      RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT: ${RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT}
+      RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT: ${RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT}
+      RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT: ${RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT}
+      RABBITMQ_RESULT_EXCHANGE: ${RABBITMQ_RESULT_EXCHANGE}
+      RABBITMQ_RESULT_QUEUE: ${RABBITMQ_RESULT_QUEUE}
+      RABBITMQ_RESULT_ROUTING_KEY: ${RABBITMQ_RESULT_ROUTING_KEY}
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/app/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/log/dojangkok:/var/log/dojangkok:ro
+    command: ["run", "/etc/alloy/config.alloy"]
+    restart: unless-stopped

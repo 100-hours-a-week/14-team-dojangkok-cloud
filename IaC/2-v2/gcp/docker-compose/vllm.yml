@@ -1,0 +1,68 @@
+services:
+  vllm:
+    image: ${VLLM_IMAGE}
+    network_mode: host
+    ipc: host
+    env_file: [.env]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      HF_HOME: /model-cache
+    volumes:
+      - model-cache:/model-cache
+    command:
+      - --model
+      - ${VLLM_MODEL}
+      - --revision
+      - ${VLLM_MODEL_REVISION}
+      - --port
+      - "8001"
+      - --enforce-eager
+      - --trust-remote-code
+      - --api-key
+      - $${VLLM_API_KEY}
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+    restart: unless-stopped
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/app/config.alloy:/etc/alloy/config.alloy:ro
+    command: ["run", "/etc/alloy/config.alloy"]
+    restart: unless-stopped
+
+volumes:
+  model-cache:
