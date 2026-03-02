@@ -115,12 +115,16 @@ graph TB
         end
 
         subgraph "Private Subnet - K8S Cluster"
-            CP["Control Plane Node<br/>t4g.medium (2vCPU, 4GB)<br/>etcd + apiserver + scheduler + controller"]
+            CP["Control Plane<br/>t4g.medium (2vCPU, 4GB)"]
 
-            W1["Worker Node 1<br/>t4g.xlarge (4vCPU, 16GB)<br/>FE + BE + AI Server + Redis"]
-            W2["Worker Node 2<br/>t4g.xlarge (4vCPU, 16GB)<br/>FE + BE + AI Server + Redis"]
+            W1["Worker 1<br/>t4g.xlarge (4vCPU, 16GB)"]
+            W2["Worker 2<br/>t4g.xlarge (4vCPU, 16GB)"]
+            W3["Worker 3<br/>t4g.xlarge (4vCPU, 16GB)"]
+        end
 
-            DB["DB Node (EC2 직접)<br/>t4g.medium (2vCPU, 4GB)<br/>MySQL (K8S 외부)"]
+        subgraph "Private Subnet - DB (K8S 외부)"
+            MySQL["MySQL<br/>t4g.medium (2vCPU, 4GB)"]
+            MongoDB["MongoDB<br/>t4g.small (2vCPU, 2GB)"]
         end
 
         subgraph "External"
@@ -131,12 +135,9 @@ graph TB
     end
 
     Client --> ALB
-    ALB --> W1
-    ALB --> W2
-    W1 --> DB
-    W2 --> DB
-    W1 -.->|"HTTPS"| RunPod
-    W2 -.->|"HTTPS"| RunPod
+    ALB --> W1 & W2 & W3
+    W1 & W2 & W3 --> MySQL & MongoDB
+    W1 & W2 & W3 -.->|"HTTPS"| RunPod
 ```
 
 ### 노드 구성
@@ -144,12 +145,13 @@ graph TB
 | 역할 | 인스턴스 | vCPU | RAM | 디스크 | 수량 | 용도 |
 |------|---------|------|-----|--------|------|------|
 | **Control Plane** | t4g.medium | 2 | 4GB | 50GB gp3 | 1 | etcd, apiserver, scheduler, controller-manager |
-| **Worker** | t4g.xlarge | 4 | 16GB | 80GB gp3 | 2 | Stateless 앱 (FE, BE, AI Server) + Redis + RabbitMQ |
-| **DB (K8S 외부)** | t4g.medium | 2 | 4GB | 100GB gp3 | 1 | MySQL (Native 설치 유지) |
+| **Worker** | t4g.xlarge | 4 | 16GB | 80GB gp3 | 3 | Dev+Prod 워크로드 (FE, BE, AI Server, Redis, RabbitMQ, ChromaDB) |
+| **MySQL (K8S 외부)** | t4g.medium | 2 | 4GB | 100GB gp3 | 1 | MySQL (Native 설치 유지) |
+| **MongoDB (K8S 외부)** | t4g.small | 2 | 2GB | 50GB gp3 | 1 | MongoDB (채팅 데이터) |
 
-**총 4대**: Control Plane 1 + Worker 2 + DB 1
+**총 6대**: Control Plane 1 + Worker 3 + MySQL 1 + MongoDB 1
 
-> **MySQL을 K8S 외부에 두는 이유**: 4단계 설계에서 결정한 "DB는 컨테이너화하지 않는 원칙"을 유지합니다. MySQL은 영구적인 데이터 보존이 생명인 Stateful 애플리케이션이며, K8S Pod의 재스케줄링 특성과 충돌합니다. 도장콕의 핵심 자산인 사용자 계약 요약 정보를 다루는 DB에 불필요한 오케스트레이션 추상화 계층을 추가할 이유가 없습니다.
+> **MySQL/MongoDB를 K8S 외부에 두는 이유**: 4단계 설계에서 결정한 "DB는 컨테이너화하지 않는 원칙"을 유지합니다. 사용자에게 보존이 기대되는 데이터(계약 요약, 채팅 이력)를 다루는 DB에 불필요한 오케스트레이션 추상화 계층을 추가할 이유가 없습니다.
 
 ### 노드 사양 산정 근거
 
@@ -169,22 +171,40 @@ graph TB
 - kubeadm 최소 요구: 2 vCPU, 2GB RAM — t4g.medium이 충족
 - etcd는 SSD 권장이나, gp3(3000 IOPS 기본) 수준이면 현재 규모에서 충분
 
-#### Worker: t4g.xlarge (4vCPU, 16GB)
+#### Worker: t4g.xlarge (4vCPU, 16GB) × 3대
+
+단일 클러스터에서 Dev+Prod를 Namespace로 분리 운영하므로, 양쪽 워크로드를 합산하여 산정합니다.
 
 ```
-노드당 워크로드 배치 (requests 기준):
-- FE Pod: 512MB, 0.5 vCPU
-- BE Pod: 2GB, 1 vCPU
-- AI Server Pod: 1GB, 1 vCPU
-- Redis Pod: 512MB, 0.25 vCPU
-- RabbitMQ Pod: 512MB, 0.25 vCPU
-- 시스템 예약 (kubelet, kube-proxy, CNI): ~1.5GB, 0.5 vCPU
+Dev+Prod 전체 워크로드 (requests 기준):
+─── Namespace당 (Dev 또는 Prod) ───
+- FE Pod:        512MB, 0.5 vCPU
+- BE Pod:        1.5GB, 1 vCPU
+- AI Server Pod: 768MB, 1 vCPU
+- Redis Pod:     256MB, 0.25 vCPU
+- RabbitMQ Pod:  256MB, 0.25 vCPU
+- ChromaDB Pod:  1GB,   0.5 vCPU
+  소계:          ~4.3GB, 3.5 vCPU
+
+─── × 2 Namespace (Dev + Prod) ───
+  워크로드 합계:  ~8.6GB, 7 vCPU
+
+─── 시스템 예약 (노드당 kubelet, kube-proxy, CNI, DaemonSet) ───
+  3대 × (~1.5GB, 0.5 vCPU) = ~4.5GB, 1.5 vCPU
+
+─── 공유 컴포넌트 (Gateway API Controller, 모니터링 등) ───
+  ~1GB, 0.5 vCPU
 ──────────────────────────
-합계: ~6GB, ~3.5 vCPU → 16GB, 4 vCPU (여유 포함)
+총 필요: ~14.1GB, 9 vCPU
+
+Worker 3대 가용: 48GB, 12 vCPU
+  → CPU 여유 3 vCPU (HPA 스케일링 대응)
+  → RAM 여유 ~34GB (충분)
 ```
 
-- Worker 2대로 구성하여 Pod 분산 배치 + 노드 1대 장애 시에도 서비스 유지
-- Stateless Pod(FE, BE, AI Server)는 양 Worker에 분산, Stateful Pod(Redis, RabbitMQ)는 한 노드에 고정
+- Worker **2대**로는 가용 8 vCPU에 필요량 9 vCPU로 **CPU 부족** → 3대 필수
+- Worker 3대 구성 시 노드 1대 장애에도 나머지 2대(8 vCPU)로 **Prod 워크로드 유지 가능**
+- Stateless Pod(FE, BE, AI Server)는 Worker 전체에 분산, Stateful Pod(Redis, RabbitMQ, ChromaDB)는 PVC로 데이터 보존
 
 ### kubeadm init 핵심 파라미터
 
