@@ -1,10 +1,10 @@
-# 노드 사양 산정 근거 (v2.0.0)
+# 노드 사양 산정 근거 (v3.1.1)
 
 - 작성일: 2026-03-02
-- 최종수정일: 2026-03-03
+- 최종수정일: 2026-03-04
 - 작성자: infra (claude-code)
 - 상태: draft
-- 관련문서: [design-step5.md](./design-step5.md) Q4~Q7
+- 관련문서: [design-step5.md](./design-step5.md) 섹션 4(노드 사이징), 섹션 3(워크로드 분석과 리소스 산정), 섹션 10(DB HA), [cost-comparison.md](./cost-comparison.md)
 
 ---
 
@@ -122,61 +122,65 @@
 | OS 커널/기타 | - | ~700MB | |
 | **합계** | **~500m** | **~1.5GB** | 노드당 |
 
-### 2.3 공유 컴포넌트 (클러스터 전체 1세트)
+> Worker **4대** 기준. 4대 합계: 2000m / 6.0GB.
 
-| 컴포넌트 | CPU | RAM | 비고 |
-|---------|-----|-----|------|
-| NGINX Gateway Fabric | 100m | 256MB | Gateway API 컨트롤러 |
-| ArgoCD | 300m | 512MB | server + repo-server + controller |
-| Prometheus + Alertmanager | 200m | 512MB | kube-prometheus-stack |
-| Grafana | 100m | 256MB | 대시보드 |
-| Promtail (DaemonSet ×3) | 150m | 192MB | 노드당 50m/64MB |
-| **합계** | **~850m** | **~1.7GB** | |
+### 2.3 공유 컴포넌트 (잠정)
+
+| 컴포넌트 | CPU | RAM | 비고 | 상태 |
+|---------|-----|-----|------|------|
+| NGINX Gateway Fabric | 100m | 256MB | Gateway API 컨트롤러 | 확정 |
+| ArgoCD | 300m | 512MB | server + repo-server + controller | 잠정 |
+| Prometheus + Alertmanager | 200m | 512MB | kube-prometheus-stack | 잠정 |
+| Grafana | 100m | 256MB | 대시보드 | 잠정 |
+| Alloy (DaemonSet ×4) | 150m | 192MB | 노드당 ~40m/48MB | 잠정 |
+| **합계** | **~850m** | **~1.7GB** | | |
+
+> Gateway Fabric만 확정(섹션 12). CD·모니터링·로그 수집은 설계 전이며, 스택 확정 후 수치 재산정 예정.
 
 ---
 
 ## 3. 운영 및 아키텍처 정책
 
-### 3.1 환경 통합: Dev+Prod Namespace 분리
+### 3.1 복제본 정책
 
-단일 클러스터에서 Dev/Prod를 Namespace로 분리 (Q1 결정).
-→ **워크로드 요구량이 2배**. 단, Dev은 Request를 낮게 설정하여 실제 부담은 1.5배 수준.
+| 서비스 | Prod 인스턴스 | 배포 방식 |
+|--------|-------------|----------|
+| FE | 2 | Deployment (anti-affinity) |
+| BE | 2 | Deployment (anti-affinity) |
+| AI Server | 1 | Deployment (HPA로 확장) |
+| MySQL | 1 Primary + 1 Replica | StatefulSet |
+| MongoDB | 1 Primary + 1 Secondary + 1 Arbiter | StatefulSet + Deployment |
+| Redis | 1 Master + 1 Replica + 3 Sentinel | StatefulSet + Deployment |
+| RabbitMQ | 1 | Deployment (단일) |
+| ChromaDB | 1 | Deployment (단일) |
 
-### 3.2 복제본 정책
+### 3.2 HPA 스케일아웃 정책
 
-| 서비스 | Dev | Prod | 비고 |
-|--------|-----|------|------|
-| FE | 1 | 2 | AZ 분산 (Anti-Affinity) |
-| BE | 1 | 2 | AZ 분산 |
-| AI Server | 1 | 1 | RabbitMQ 비동기, HPA로 확장 |
-| MySQL | 1 | 1 (+ Replica TBD) | Q5에서 결정 |
-| MongoDB | 1 | 1 (+ Secondary TBD) | Q5에서 결정 |
-| Redis | 1 | 1 (+ Replica TBD) | Q5에서 결정 |
-| RabbitMQ | 1 | 1 | 단일 (미러링 후순위) |
-| ChromaDB | 1 | 1 | 단일 |
+FE/BE에 HPA를 적용하여 트래픽 급증 시 자동 확장. HPA 풀스케일 시 리소스 증가:
 
-### 3.3 N-1 생존 원칙
+| 시나리오 | 추가 CPU | 추가 RAM | Prod 합계 |
+|----------|---------|---------|----------|
+| 기본 HA (FE×2, BE×2) | — | — | ~3950m |
+| FE +1 (→3대) | +250m | +512MB | ~4200m |
+| BE +1 (→3대) | +500m | +1GB | ~4450m |
+| FE+BE 각 +1 | +750m | +1.5GB | ~4700m |
 
-Worker 노드 1대가 다운되어도, **남은 노드들로 Prod 워크로드를 전부 수용 가능**해야 한다.
-(Dev는 일시적 Pending 허용)
+> HPA maxReplicas는 Worker allocatable 여유에 따라 결정. 노드 선정(섹션 6)에서 HPA 수용 범위를 비교.
 
 ---
 
-## 4. K8S Request/Limit 산정
+## 4. Prod Request/Limit 산정
+
+> **잠정 산정**: 저트래픽 실측 기반 초기값. 도커 컨테이너 부하테스트 완료 후 조정 예정.
 
 ### 4.1 산정 원칙
 
 ```
-Request = 컨테이너가 안정 운영에 필요한 최소 보장 리소스 (스케줄러 배치 기준)
-Limit   = 버스트 시 허용되는 최대치 (초과 시 CPU throttle / OOM Kill)
+Request = 실측 피크 × 2~5배 (서비스 특성별)
+Limit   = Request × 2~3 (버스트 허용)
 ```
 
-- **CPU Request**: 평균 사용량의 3~5배 (저트래픽 Dev 기준이므로 Prod 증가분 + 안전 마진)
-- **CPU Limit**: 실측 피크 수준 또는 그 이상 (버스트 허용)
-- **RAM Request**: 프로세스 피크 + 20~30% 여유
-- **RAM Limit**: Request의 1.5~2배 (OOM 방지)
-
-### 4.2 Prod Request/Limit
+### 4.2 Prod Request/Limit (잠정)
 
 | 서비스 | 실측 근거 | CPU Req | CPU Lim | RAM Req | RAM Lim |
 |--------|----------|---------|---------|---------|---------|
@@ -189,143 +193,93 @@ Limit   = 버스트 시 허용되는 최대치 (초과 시 CPU throttle / OOM Ki
 | RabbitMQ | avg 0.024v, Erlang 135MB | 100m | 250m | 256MB | 512MB |
 | ChromaDB | 실측 없음, 벡터 인덱스 | 200m | 500m | 768MB | 1.5GB |
 
-> **BE CPU Request 500m 근거**: 평균 0.072v이지만 피크 1.81v. Request는 "정상 운영 보장"이므로 평균의 ~7배로 설정.
-> JVM은 GC 시 순간 CPU 급등 → 500m이면 GC 외 정상 시간은 throttle 없이 동작.
-> 피크 1.81v 버스트는 CPU Limit 2000m으로 수용.
-
-> **FE CPU Request 250m 근거**: 평균 0.037v이지만 SSR 렌더링 시 피크 1.86v까지 버스트.
-> Request 250m은 평균의 ~7배. SSR 버스트는 Limit 1500m으로 수용.
-
-> **MySQL RAM 1GB 근거**: InnoDB Buffer Pool을 128MB(기본)→512MB로 증설 + 연결당 메모리 + 쿼리 버퍼.
-> 현재 Dev에서 VM 메모리 959MB 중 컨테이너 실사용 ~600MB. Prod에서 Buffer Pool 증설 시 ~800MB 예상.
-
-### 4.3 Dev Request/Limit
-
-Dev은 Prod 대비 Request를 **50% 수준**으로 낮춰 자원 절약. N-1 장애 시 Dev Pod가 먼저 Pending.
-
-| 서비스 | CPU Req | CPU Lim | RAM Req | RAM Lim |
-|--------|---------|---------|---------|---------|
-| FE | 100m | 1000m | 256MB | 512MB |
-| BE | 250m | 1500m | 512MB | 1.5GB |
-| AI Server | 100m | 500m | 256MB | 512MB |
-| MySQL | 100m | 500m | 512MB | 1GB |
-| MongoDB | 100m | 500m | 256MB | 512MB |
-| Redis | 50m | 250m | 128MB | 256MB |
-| RabbitMQ | 50m | 250m | 128MB | 256MB |
-| ChromaDB | 100m | 500m | 384MB | 1GB |
+> 부하테스트 후 Request/Limit 값 재산정 예정.
 
 ---
 
 ## 5. 워크로드 합산
 
-### 5.1 시나리오 A: DB 단일 인스턴스 (HA 없음)
+### 5.1 시나리오 A — Prod 단일 (HA 미적용)
 
-```
-─── Prod Namespace ───
-  FE ×2:       500m,  1.0GB
-  BE ×2:       1000m, 2.0GB
-  AI Server:   200m,  512MB
-  MySQL:       200m,  1.0GB
-  MongoDB:     150m,  512MB
-  Redis:       100m,  256MB
-  RabbitMQ:    100m,  256MB
-  ChromaDB:    200m,  768MB
-  Prod 소계:   2450m, 6.3GB
+| 카테고리 | 구성 | CPU Request | RAM Request |
+|----------|------|-------------|-------------|
+| App | FE×2, BE×2, AI×1 | 1700m | 3.54GB |
+| DB (단일) | MySQL, MongoDB, Redis | 450m | 1.77GB |
+| Infra | RabbitMQ, ChromaDB | 300m | 1.02GB |
+| **워크로드 소계** | | **2450m** | **6.33GB** |
+| 공유 컴포넌트 | | ~850m | ~1.7GB |
+| **Prod 합계** | | **~3300m** | **~8.0GB** |
 
-─── Dev Namespace ───
-  FE:          100m,  256MB
-  BE:          250m,  512MB
-  AI Server:   100m,  256MB
-  MySQL:       100m,  512MB
-  MongoDB:     100m,  256MB
-  Redis:       50m,   128MB
-  RabbitMQ:    50m,   128MB
-  ChromaDB:    100m,  384MB
-  Dev 소계:    850m,  2.4GB
+### 5.2 시나리오 B — Prod HA (채택)
 
-─── 공유 컴포넌트 ───
-  Gateway + ArgoCD + 모니터링: 850m, 1.7GB
+| 카테고리 | 구성 | CPU Request | RAM Request |
+|----------|------|-------------|-------------|
+| **App** | FE×2, BE×2, AI×1 | 1700m | 3.54GB |
+| **DB Primary** | MySQL, MongoDB, Redis | 450m | 1.77GB |
+| **DB Replica** | MySQL Replica, MongoDB Secondary, Redis Replica | 450m | 1.77GB |
+| **Quorum** | MongoDB Arbiter, Redis Sentinel×3 | 200m | 0.26GB |
+| **Infra** | RabbitMQ, ChromaDB | 300m | 1.02GB |
+| **워크로드 소계** | | **3100m** | **8.35GB** |
+| 공유 컴포넌트 | | ~850m | ~1.7GB |
+| **Prod 합계** | | **~3950m** | **~10.0GB** |
 
-─── 시스템 예약 (Worker 3대) ───
-  3 × 500m/1.5GB = 1500m, 4.5GB
-──────────────────────────
-총 필요: 5650m, 14.9GB
-```
+> HA 추가분: DB Replica(450m/1.77GB) + Quorum(200m/0.26GB) = 650m / 2.0GB.
 
-### 5.2 시나리오 B: DB HA (Primary-Replica, Q5 결정 시)
+### 5.3 시스템 예약 요약
 
-시나리오 A에 Prod Replica + Quorum 추가:
-
-```
-─── 추가분 (Prod HA) ───
-  MySQL Replica:      200m,  1.0GB
-  MongoDB Secondary:  150m,  512MB
-  MongoDB Arbiter:    50m,   64MB
-  Redis Replica:      100m,  256MB
-  Redis Sentinel ×3:  150m,  192MB
-  HA 추가 소계:       650m,  2.0GB
-──────────────────────────
-총 필요 (HA 포함): 6300m, 16.9GB
-```
-
-### 5.3 요약
-
-| 시나리오 | CPU Request 합계 | RAM Request 합계 |
-|---------|-----------------|-----------------|
-| A: DB 단일 | 5650m | 14.9GB |
-| B: DB HA | 6300m | 16.9GB |
+| 항목 | CPU | RAM |
+|------|-----|-----|
+| Worker 시스템 예약 (4대) | 2000m | 6.0GB |
+| Prod 합계 (시나리오 B) | ~3950m | ~10.0GB |
+| **총 필요량 (시스템 + Prod)** | **~5950m** | **~16.0GB** |
 
 ---
 
-## 6. 클라우드 인스턴스 특성 및 노드 선정
+## 6. 노드 선정
 
 ### 6.1 워크로드 특성: CPU Bound
 
 | 지표 | 값 | 판단 |
 |------|-----|------|
-| CPU Request 합계 (HA) | 6300m | 높음 |
-| RAM Request 합계 (HA) | 16.9GB | 낮음 |
-| CPU:RAM 비율 | 1vCPU : 2.7GB | CPU가 병목 |
+| CPU Request 합계 (HA) | ~3950m | 높음 |
+| RAM Request 합계 (HA) | ~10.0GB | 낮음 |
+| CPU:RAM 비율 | 1vCPU : 2.5GB | CPU가 병목 |
 
-→ 메모리 특화(r6g) 불필요. **범용(t4g) 또는 컴퓨팅 특화(c6g)** 가 적합.
-→ t4g는 버스트 모델이므로 CPU 크레딧 관리 필요. c6g는 고정 성능이지만 비용 1.5배.
+→ 메모리 특화(r6g) 불필요. **범용(t4g)** 이 적합.
 
-### 6.2 인스턴스 후보 비교
+### 6.2 후보 비교
 
-| 인스턴스 | vCPU | RAM | 월비용 | 특성 |
-|---------|------|-----|--------|------|
-| t4g.large | 2 | 8GB | ~$49 | Burstable, ARM64 |
-| **t4g.xlarge** | **4** | **16GB** | **~$98** | Burstable, ARM64 |
-| t4g.2xlarge | 8 | 32GB | ~$196 | Burstable, ARM64 |
-| c6g.xlarge | 4 | 8GB | ~$98 | 고정 성능, RAM 적음 |
-| m6g.xlarge | 4 | 16GB | ~$116 | 고정 성능, 범용 |
+| 옵션 | Alloc CPU | Alloc RAM | 월비용 | HA 활용률 | HPA 풀(FE+BE +1) |
+|------|-----------|-----------|--------|----------|---------|
+| t4g.large × 3 | 4.5v | 19.5GB | $147 | 88% | ✗ (104%) |
+| **t4g.large × 4** | **6.0v** | **26.0GB** | **$196** | **66%** | **78%** |
+| t4g.xlarge × 2 | 7.0v | 29.0GB | $196 | 56% | 67% |
+| t4g.xlarge × 3 | 10.5v | 43.5GB | $294 | 38% | 45% |
 
-### 6.3 Worker 대수별 비교
+- **HA 활용률** = Prod 합계 ~3950m ÷ Alloc CPU
+- **HPA 풀** = HPA 최대(~4700m) ÷ Alloc CPU
 
-| 구성 | Allocatable CPU | Allocatable RAM | 월비용 | CPU 활용률 (HA) | N-1 생존 |
-|------|----------------|----------------|--------|---------------|---------|
-| t4g.large ×4 | 6.0v | 26.0GB | $196 | 6300/6000 = **105% (불가)** | ✗ |
-| t4g.large ×5 | 7.5v | 32.5GB | $245 | 6300/7500 = 84% | 제한적 |
-| **t4g.xlarge ×3** | **10.5v** | **43.5GB** | **$294** | 6300/10500 = **60%** | **✓** |
-| t4g.xlarge ×2 | 7.0v | 29.0GB | $196 | 6300/7000 = 90% | ✗ |
-| m6g.xlarge ×3 | 10.5v | 43.5GB | $348 | 60% | ✓ (크레딧 걱정 없음) |
+> Allocatable 산정: vCPU에서 시스템 예약 0.5v 차감, RAM에서 1.5GB 차감 (노드당)
 
-> **Allocatable 산정**: vCPU에서 시스템 예약 0.5v 차감, RAM에서 1.5GB 차감 (노드당)
+### 6.3 결론: t4g.large × 4
 
-### 6.4 t4g.xlarge × 3 선정
+| 항목 | 노드당 | 4대 합계 |
+|------|--------|---------|
+| 총 vCPU | 2.0 | 8.0 |
+| 시스템 예약 (CPU) | 500m | 2000m |
+| **Allocatable CPU** | **1.5v** | **6.0v** |
+| 총 RAM | 8.0GB | 32.0GB |
+| 시스템 예약 (RAM) | 1.5GB | 6.0GB |
+| **Allocatable RAM** | **6.5GB** | **26.0GB** |
 
-| 항목 | 시나리오 A (단일) | 시나리오 B (HA) |
-|------|-----------------|----------------|
-| CPU 활용률 | 5650/10500 = **54%** | 6300/10500 = **60%** |
-| RAM 활용률 | 14.9/43.5 = **34%** | 16.9/43.5 = **39%** |
-| N-1 시 CPU | 5650/7000 = 81% | 6300/7000 = **90%** |
-| N-1 시 판정 | Prod+Dev 수용 가능 | Prod 수용, Dev 일부 Pending |
+**선정 근거:**
 
-- 평시 CPU 60%: HPA 버스트 + 향후 서비스 추가 여유
-- RAM 39%: JVM Heap 증설, MongoDB 데이터 증가 여유
-- N-1 시 90%: Prod은 유지, Dev Pod는 PriorityClass로 후순위 축출
+- 비용 $196/월 — xlarge×2와 동일 비용
+- HA 활용률 66% — 목표 범위(60~80%) 내
+- HPA 풀스케일 78% — FE+BE 각 +1 시에도 수용 가능
+- 4대 분산 — AZ 2:2 균등 배치 가능
 
-### 6.5 EBS gp3 IOPS
+### 6.4 EBS gp3 IOPS
 
 | 서비스 | PVC 크기 | 기본 IOPS | 비고 |
 |--------|---------|----------|------|
@@ -335,26 +289,36 @@ Dev은 Prod 대비 Request를 **50% 수준**으로 낮춰 자원 절약. N-1 장
 
 > gp3 기본 3000 IOPS는 현재 워크로드에 충분. 향후 MySQL 쿼리 증가 시 IOPS 프로비저닝(최대 16000) 조정.
 
-### 6.6 T시리즈 CPU 크레딧 리스크
+### 6.5 T시리즈 CPU 크레딧 리스크
 
 **실측 확인 사항**: 현행 V2에서 FE/BE의 CPU 크레딧이 거의 0까지 소진된 이력이 Prometheus에서 확인됨 (30일간 BE 최대 90.3%, FE 최대 92.8%).
 
 **K8S 전환 후 대응**:
-1. Worker 3대에 워크로드가 분산되어 **단일 노드 부하가 분산**됨
-2. t4g.xlarge의 기본 성능: **40% (1.6vCPU 상시 사용 가능)** — 현재 전체 Request 합산(6.3v) ÷ 3노드 = 노드당 ~2.1v Request이지만, 실제 사용량은 avg 기준 훨씬 낮음
+1. Worker **4대**에 워크로드가 분산되어 **단일 노드 부하가 분산**됨
+2. t4g.large의 기본 성능: **30% (0.6vCPU 상시 사용 가능)** — 4대 분산으로 노드당 평균 부하는 baseline 이내
 3. CPU Credit Balance를 Prometheus로 모니터링, 알람 설정
-4. 고갈 시 **Unlimited Mode 활성화** 또는 노드 스케일아웃
+4. 고갈 시 **Unlimited Mode 활성화** 또는 m6g.large로 교체
+
+### 6.6 감수 리스크
+
+| 리스크 | 영향 | 완화 방안 |
+|--------|------|----------|
+| 노드당 alloc 1.5v — BE Limit(2000m) 초과 | 버스트 시 CPU throttle | 실측 피크(1.8v)는 순간적. Limit 1500m 조정 또는 throttle 감수 |
+| 실측이 저트래픽 기준 | Prod 부하 예상보다 높을 수 있음 | 부하테스트 후 Request 재조정, 부족 시 xlarge 스케일업 |
+| T시리즈 CPU 크레딧 고갈 | 기본 성능(30%)으로 제한 | Unlimited Mode + CloudWatch CPUCreditBalance 알림 |
+| HPA 풀스케일 시 78% | FE+BE 동시 +1 시 여유 22% | HPA maxReplicas 제한(FE 3, BE 3). 상시 80%+ 시 W5 추가 |
+| 2 AZ 한정 | 단일 AZ 장애 시 50% 노드 손실 | AZ 2:2 배치로 1대 손실 수용, 2대 동시 손실은 감수 |
 
 ---
 
 ## 7. 스케일업 경로
 
-| 조건 | 대응 |
-|------|------|
-| CPU 일상 80%+ | t4g.2xlarge로 스케일업 (8vCPU, 32GB, ~$196) |
-| 특정 노드만 압박 | 해당 노드만 스케일업 |
-| Worker 수 부족 | W4 추가 (AZ 균형 배치) |
-| 크레딧 반복 고갈 | m6g.xlarge로 교체 (고정 성능, 월 +$18/대) |
+| 조건 | 대응 | 결과 |
+|------|------|------|
+| CPU 일상 80%+ | t4g.xlarge로 교체 (4vCPU, 16GB, ~$98/대) | 노드당 alloc 3.5v |
+| 특정 노드만 압박 | 해당 노드만 xlarge로 교체 | 혼합 구성 허용 |
+| 크레딧 반복 고갈 | m6g.large로 교체 (고정 성능, ~$67/대) | 동일 사양, 크레딧 제한 없음 |
+| Worker 수 부족 | **W5 추가** ($49/대, AZ 밸런싱) | 7.5v alloc, 월 $245 |
 
 ---
 
@@ -364,3 +328,6 @@ Dev은 Prod 대비 Request를 **50% 수준**으로 낮춰 자원 절약. N-1 장
 |------|------|----------|
 | v1.0.0 | 2026-03-02 | 초안: V2 실측 기반 requests 산정, t4g.xlarge 3대 |
 | v2.0.0 | 2026-03-03 | 전면 재작성: Prometheus 실측 데이터(3d+30d) 기반, 4섹션 구조, 컨테이너 레벨 분석, Dev/Prod 분리 산정, HA 시나리오 추가 |
+| **v3.0.0** | **2026-03-03** | **전면 재작성**: Dev 제거(Prod 전용), Worker 3대→4대, t4g.xlarge×3→t4g.large×4, 리소스 산정 간소화(부하테스트 후 조정 예정), 감수 리스크 추가. design-step5.md v1.4.0과 수치 일치. |
+| v3.1.0 | 2026-03-04 | N-1 제거, HPA 스케일아웃 시나리오 추가(FE/BE +1), 비교표·리스크 HPA 기준으로 갱신. design-step5.md v1.5.0 섹션 참조 업데이트. |
+| **v3.1.1** | **2026-03-04** | 공유 컴포넌트: Promtail→Alloy, 잠정 표기 추가(Gateway Fabric만 확정, CD·모니터링·로그 수집은 설계 전). |
