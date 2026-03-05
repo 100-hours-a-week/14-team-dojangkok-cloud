@@ -138,6 +138,4 @@ systemd가 새로운 설정파일이 생겼음을 인식할 수 있도록 다음
 > sudo systemctl daemon-reload
 
 추가한 타이머를 각각 추가 및 시작합니다.
-> sudo systemctl enable ${timer_file_name}
-
-> sudo systemctl start ${timer_file_name}
+> sudo systemctl enable --now ${timer_file_name}
