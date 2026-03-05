@@ -59,4 +59,4 @@ service-account*.json
 *.tfplan
 *.plan
 *.tfplan.json
-wiki/design/step5/design-step5.md
+wiki/design/step5/design-step5_old.md
