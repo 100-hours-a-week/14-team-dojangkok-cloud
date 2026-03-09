@@ -103,6 +103,7 @@ module "security_groups" {
         { from_port = 10257, to_port = 10257, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "kube-controller-manager" },
         { from_port = 10259, to_port = 10259, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "kube-scheduler" },
         { from_port = 4789, to_port = 4789, protocol = "udp", cidr_blocks = [var.vpc_cidr], description = "Calico VXLAN" },
+        { from_port = 5473, to_port = 5473, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "Calico Typha" },
       ]
     }
 
@@ -111,6 +112,7 @@ module "security_groups" {
       ingress_rules = [
         { from_port = 10250, to_port = 10250, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "kubelet" },
         { from_port = 4789, to_port = 4789, protocol = "udp", cidr_blocks = [var.vpc_cidr], description = "Calico VXLAN" },
+        { from_port = 5473, to_port = 5473, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "Calico Typha" },
         { from_port = 30000, to_port = 32767, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "NodePort range" },
       ]
     }
