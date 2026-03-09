@@ -6,6 +6,10 @@
 # ============================================================
 set -euo pipefail
 
+# --- Install AWS CLI ---
+DEBIAN_FRONTEND=noninteractive apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq awscli
+
 REGION="${region}"
 ROUTE_TABLE_IDS="${route_table_ids}"
 VPC_CIDR="${vpc_cidr}"
