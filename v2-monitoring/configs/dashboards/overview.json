@@ -1,0 +1,609 @@
+{
+  "uid": "overview",
+  "title": "Overview",
+  "description": "High-level overview of all monitored instances - service status, resource usage, and trends",
+  "tags": ["overview"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "15s", "30s", "1m", "5m"],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h"]
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Service Status",
+      "collapsed": false,
+      "id": 100,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "title": "Instances Up",
+      "description": "Number of instances currently reporting as up",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(up == 1)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Instances Down",
+      "description": "Number of instances currently reporting as down",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(up == 0) OR on() vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Total Series",
+      "description": "Total number of active time series in Prometheus",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count({__name__=~\".+\"})",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "mappings": [],
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Resource Overview",
+      "collapsed": false,
+      "id": 101,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "panels": []
+    },
+    {
+      "id": 4,
+      "title": "CPU Usage",
+      "description": "Current CPU usage per instance",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\",job=\"node\"}[5m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Memory Usage",
+      "description": "Current memory usage per instance",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - node_memory_MemAvailable_bytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"}) * 100",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Disk Usage",
+      "description": "Current root filesystem usage per instance",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - node_filesystem_avail_bytes{mountpoint=\"/\",job=\"node\"} / node_filesystem_size_bytes{mountpoint=\"/\",job=\"node\"}) * 100",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "row",
+      "title": "CPU / Memory Trends",
+      "collapsed": false,
+      "id": 102,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "title": "CPU Usage Over Time",
+      "description": "CPU usage trend per instance over the selected time range",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\",job=\"node\"}[5m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["mean", "max"]
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Memory Usage Over Time",
+      "description": "Memory usage trend per instance over the selected time range",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - node_memory_MemAvailable_bytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"}) * 100",
+          "legendFormat": "{{instance}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["mean", "max"]
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Disk / Network",
+      "collapsed": false,
+      "id": 103,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "title": "Disk Usage Over Time",
+      "description": "Root filesystem usage trend per instance",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - node_filesystem_avail_bytes{mountpoint=\"/\",job=\"node\"} / node_filesystem_size_bytes{mountpoint=\"/\",job=\"node\"}) * 100",
+          "legendFormat": "{{instance}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["mean", "max"]
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Network Traffic",
+      "description": "Network receive and transmit bytes per second per instance and device",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\",job=\"node\"}[5m])",
+          "legendFormat": "Recv {{instance}} {{device}}",
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\",job=\"node\"}[5m])",
+          "legendFormat": "Send {{instance}} {{device}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "Send.*" },
+            "properties": [
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": ["mean", "max"]
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

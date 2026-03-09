@@ -71,6 +71,7 @@ variable "iam_instance_profile_names" {
     mysql        = "dojangkok-v2-mysql-role"
     nat-instance = "dojangkok-v2-nat-instance-role"
     redis        = "dojangkok-v2-redis-role"
+    ai           = "dojangkok-v2-ai-role"
   }
 }
 
@@ -110,4 +111,158 @@ variable "domain_name" {
 variable "monitoring_source_cidrs" {
   type    = list(string)
   default = []
+}
+
+# ==============================================
+# AI Server (GCP → AWS 이전)
+# ==============================================
+
+variable "custom_ami_id" {
+  type        = string
+  description = "Packer docker-base AMI ID (arm64)"
+  default     = ""
+}
+
+variable "ai_instance_type" {
+  type    = string
+  default = "t4g.medium"
+}
+
+variable "ai_volume_size" {
+  type    = number
+  default = 30
+}
+
+# AI Secrets (passed via -var flag)
+variable "ai_vllm_api_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "ai_backend_internal_token" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "ai_ocr_api" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "ai_rabbitmq_url" {
+  type        = string
+  sensitive   = true
+  description = "amqps://user:pass@mq.dev.dojangkok.cloud:5671/"
+  default     = ""
+}
+
+# AI Environment
+variable "ai_vllm_base_url" {
+  type    = string
+  default = "http://63.141.33.33:22140/v1"
+}
+
+variable "ai_vllm_model" {
+  type    = string
+  default = "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
+}
+
+variable "ai_vllm_lora_adapter_checklist" {
+  type    = string
+  default = "checklist"
+}
+
+variable "ai_vllm_lora_adapter_easycontract" {
+  type    = string
+  default = "easycontract"
+}
+
+variable "ai_backend_callback_base_url" {
+  type    = string
+  default = "https://dev.dojangkok.cloud/api"
+}
+
+variable "ai_http_timeout_sec" {
+  type    = string
+  default = "180"
+}
+
+# RabbitMQ (same as GCP defaults)
+variable "rabbitmq_request_exchange_easy_contract" {
+  type    = string
+  default = "fast.exchange"
+}
+
+variable "rabbitmq_request_queue_easy_contract" {
+  type    = string
+  default = "easy-contract.request"
+}
+
+variable "rabbitmq_request_routing_key_easy_contract" {
+  type    = string
+  default = "easy-contract.request"
+}
+
+variable "rabbitmq_request_exchange_checklist" {
+  type    = string
+  default = "fast.exchange"
+}
+
+variable "rabbitmq_request_queue_checklist" {
+  type    = string
+  default = "checklist.request"
+}
+
+variable "rabbitmq_request_routing_key_checklist" {
+  type    = string
+  default = "checklist.request"
+}
+
+variable "rabbitmq_cancel_exchange_easy_contract" {
+  type    = string
+  default = "fast.exchange"
+}
+
+variable "rabbitmq_cancel_queue_easy_contract" {
+  type    = string
+  default = "cancel.request"
+}
+
+variable "rabbitmq_cancel_routing_key_easy_contract" {
+  type    = string
+  default = "cancel.request"
+}
+
+variable "rabbitmq_result_exchange" {
+  type    = string
+  default = "fast.exchange"
+}
+
+variable "rabbitmq_result_queue" {
+  type    = string
+  default = "ai.response"
+}
+
+variable "rabbitmq_result_routing_key" {
+  type    = string
+  default = "ai.response"
+}
+
+# Monitoring
+variable "loki_url" {
+  type    = string
+  default = ""
+}
+
+variable "tempo_endpoint" {
+  type    = string
+  default = ""
+}
+
+variable "prometheus_url" {
+  type    = string
+  default = ""
 }
