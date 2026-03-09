@@ -10,22 +10,11 @@
   register: gateway_api_result
   changed_when: "'created' in gateway_api_result.stdout"
 
-- name: Add NGINX Gateway Fabric Helm repo
-  command: >
-    helm --kubeconfig=/home/ubuntu/.kube/config
-    repo add nginx-gateway https://kubernetes-sigs.github.io/nginx-gateway-fabric
-  register: helm_repo
-  failed_when: helm_repo.rc != 0 and 'already exists' not in helm_repo.stderr
-  changed_when: "'added' in helm_repo.stdout"
-
-- name: Update Helm repos
-  command: >
-    helm --kubeconfig=/home/ubuntu/.kube/config repo update
-
 - name: Install NGINX Gateway Fabric
   command: >
     helm --kubeconfig=/home/ubuntu/.kube/config
-    upgrade --install nginx-gateway nginx-gateway/nginx-gateway-fabric
+    upgrade --install nginx-gateway
+    oci://ghcr.io/nginx/charts/nginx-gateway-fabric
     --namespace nginx-gateway --create-namespace
     --set service.type=NodePort
     --set service.ports[0].port=80,service.ports[0].nodePort={{ gateway_nodeport_http }}
