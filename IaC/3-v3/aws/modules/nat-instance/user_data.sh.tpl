@@ -6,9 +6,13 @@
 # ============================================================
 set -euo pipefail
 
-# --- Install AWS CLI ---
+# --- Install AWS CLI v2 (ARM64) ---
 DEBIAN_FRONTEND=noninteractive apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq awscli
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
 
 REGION="${region}"
 ROUTE_TABLE_IDS="${route_table_ids}"
