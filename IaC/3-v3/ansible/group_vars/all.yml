@@ -23,6 +23,5 @@ containerd_version: "1.7"
 cluster_name: "dojangkok-v3"
 
 # SSM을 통한 접근 (SSH 대신)
-ansible_connection: aws_ssm
-ansible_aws_ssm_region: ap-northeast-2
-ansible_aws_ssm_profile: tf
+# 로컬: ansible-playbook -e ansible_aws_ssm_profile=tf ...
+# CI: OIDC 환경변수 사용 (profile 불필요)

@@ -23,7 +23,7 @@ keyed_groups:
     separator: "_"
 
 hostnames:
-  - private-ip-address
+  - instance-id
 
 compose:
   ansible_host: instance_id
