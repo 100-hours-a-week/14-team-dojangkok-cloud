@@ -13,8 +13,9 @@ on:
         options:
           - plan
           - apply
+          - destroy
       ref:
-        description: "체크아웃할 커밋 SHA (apply 시 필수, plan은 선택)"
+        description: "체크아웃할 커밋 SHA (apply/destroy 시 필수, plan은 선택)"
         required: false
         type: string
 
@@ -74,9 +75,14 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
+          DESTROY_FLAG=""
+          if [ "${{ inputs.action }}" = "destroy" ]; then
+            DESTROY_FLAG="-destroy"
+          fi
           terraform plan \
             -var="vpc_id=${{ secrets.K8S_DEV_VPC_ID }}" \
             -var="ssl_certificate_arn=${{ secrets.K8S_DEV_SSL_CERT_ARN }}" \
+            $DESTROY_FLAG \
             -input=false -no-color -detailed-exitcode -out=tfplan \
             2>&1 | tee plan_output.txt
         working-directory: ${{ env.WORKING_DIR }}
@@ -168,5 +174,45 @@ jobs:
           path: ${{ env.WORKING_DIR }}
 
       - name: Terraform Apply
+        run: terraform apply -input=false tfplan
+        working-directory: ${{ env.WORKING_DIR }}
+
+  # ──────────────────────────────────────────────
+  # Destroy: 수동 트리거만 (workflow_dispatch + action=destroy + ref 필수)
+  # ──────────────────────────────────────────────
+  destroy:
+    name: "Terraform Destroy"
+    needs: plan
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'destroy' &&
+      github.event.inputs.ref != '' &&
+      needs.plan.outputs.plan_exitcode == '2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Destroy
         run: terraform apply -input=false tfplan
         working-directory: ${{ env.WORKING_DIR }}
