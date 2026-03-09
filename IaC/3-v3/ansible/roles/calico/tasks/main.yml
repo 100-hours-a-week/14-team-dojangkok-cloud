@@ -37,8 +37,8 @@
     kubectl --kubeconfig=/home/ubuntu/.kube/config
     wait --for=condition=Ready pods
     --all -n calico-system
-    --timeout=50s
-  retries: 10
-  delay: 15
+    --timeout=300s
+  retries: 3
+  delay: 10
   register: calico_ready
   until: calico_ready.rc == 0
