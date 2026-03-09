@@ -306,7 +306,7 @@ design-step5.md §14, §15 기반. V2 ALB 모듈 수정.
 
 | 항목 | V2 | V3 |
 |------|-----|-----|
-| 타겟 타입 | Instance (ASG 등록) | Instance (고정 Worker 6대) |
+| 타겟 타입 | Instance (ASG 등록) | Instance (Worker `workers_per_az × 3`) |
 | 타겟 포트 | 3000/8080 (앱 포트 직접) | 30xxx (NodePort) |
 | 경로 라우팅 | ALB Listener Rule | NGINX Gateway Fabric (HTTPRoute) |
 | Health Check | `/health-check`, `/actuator/health` | Gateway Fabric 헬스 엔드포인트 |
@@ -315,7 +315,7 @@ design-step5.md §14, §15 기반. V2 ALB 모듈 수정.
 
 | 타겟그룹 | 포트 | 대상 | Health Check |
 |---------|------|------|-------------|
-| k8s-gateway | NodePort (30xxx) | Worker 6대 | `/healthz` |
+| k8s-gateway | NodePort (30xxx) | Worker 전체 (`workers_per_az × 3`) | `/healthz` |
 
 > V2에서는 FE/BE 별도 TG + path rule이었으나, V3에서는 **단일 TG**로 단순화. 경로 분기는 K8S 내부 Gateway Fabric이 처리.
 
@@ -328,7 +328,7 @@ design-step5.md §14, §15 기반. V2 ALB 모듈 수정.
 
 #### Worker 등록
 
-V2는 ASG가 자동 등록했으나, V3은 고정 EC2이므로 `aws_lb_target_group_attachment`로 6대 수동 등록.
+V2는 ASG가 자동 등록했으나, V3은 고정 EC2이므로 `aws_lb_target_group_attachment`로 Worker 전체 수동 등록. `workers_per_az` 변경 시 자동 반영.
 
 ```hcl
 resource "aws_lb_target_group_attachment" "workers" {
@@ -517,18 +517,20 @@ K8S 노드 EC2에 추가 적용하는 태그:
 
 ### 노드 토폴로지 매핑
 
-Phase 1 기준 CP 1대 + Worker 6대 태그 할당:
+CP 1대 + Worker `workers_per_az × 3 AZ`대 태그 할당.
+`workers_per_az` 변수로 AZ당 워커 수 조절 (초기 1, prod 목표 2).
 
-| 노드 | `k8s:role` | `k8s:nodepool` | AZ | 서브넷 |
-|------|------------|----------------|-----|--------|
-| cp | `control-plane` | `system` | 2a | k8s-2a |
-| w1 | `worker` | `default` | 2a | k8s-2a |
-| w2 | `worker` | `default` | 2a | k8s-2a |
-| w3 | `worker` | `default` | 2b | k8s-2b |
-| w4 | `worker` | `default` | 2b | k8s-2b |
-| w5 | `worker` | `default` | 2c | k8s-2c |
-| w6 | `worker` | `default` | 2c | k8s-2c |
+| 노드 | `k8s:role` | `k8s:nodepool` | AZ | 서브넷 | 비고 |
+|------|------------|----------------|-----|--------|------|
+| cp | `control-plane` | `system` | 2a | k8s-2a | 고정 |
+| w1 | `worker` | `default` | 2a | k8s-2a | workers_per_az ≥ 1 |
+| w2 | `worker` | `default` | 2a | k8s-2a | workers_per_az ≥ 2 |
+| w3 | `worker` | `default` | 2b | k8s-2b | workers_per_az ≥ 1 |
+| w4 | `worker` | `default` | 2b | k8s-2b | workers_per_az ≥ 2 |
+| w5 | `worker` | `default` | 2c | k8s-2c | workers_per_az ≥ 1 |
+| w6 | `worker` | `default` | 2c | k8s-2c | workers_per_az ≥ 2 |
 
+> 초기 배포: `workers_per_az = 1` (3대). 안정화 후 tfvars에서 2로 변경, `terraform apply`로 스케일업.
 > CP는 `system` 노드풀. 향후 모니터링/인프라 전용 노드 추가 시에도 `system` 노드풀 사용.
 
 ### 자동화 파이프라인 연결
