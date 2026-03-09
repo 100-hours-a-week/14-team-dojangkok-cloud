@@ -26,8 +26,11 @@ hostnames:
   - private-ip-address
 
 compose:
-  ansible_host: private_ip_address
+  ansible_host: instance_id
+  ansible_connection: "'aws_ssm'"
+  ansible_aws_ssm_region: "'ap-northeast-2'"
   ansible_user: ubuntu
   k8s_role: tags['k8s:role']
   k8s_nodepool: tags['k8s:nodepool']
   node_az: placement.availability_zone
+  private_ip: private_ip_address
