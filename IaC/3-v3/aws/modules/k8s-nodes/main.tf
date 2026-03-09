@@ -35,6 +35,7 @@ resource "aws_instance" "control_plane" {
   vpc_security_group_ids = var.cp_security_group_ids
   iam_instance_profile   = var.iam_instance_profile
   source_dest_check      = false
+  user_data              = local.ssm_user_data
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -63,6 +64,15 @@ resource "aws_instance" "control_plane" {
 # --- Worker Nodes ---
 
 locals {
+  ssm_user_data = <<-EOF
+    #!/bin/bash
+    mkdir -p /tmp/ssm && cd /tmp/ssm
+    curl -fsSL "https://s3.amazonaws.com/ec2-downloads-ssm/latest/debian_arm64/amazon-ssm-agent.deb" -o amazon-ssm-agent.deb
+    dpkg -i amazon-ssm-agent.deb
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+  EOF
+
   # workers_per_az × 3 AZ → 플랫 맵 생성
   # e.g. workers_per_az=1 → { "w-2a-1"={az="a",...}, "w-2b-1"={...}, "w-2c-1"={...} }
   # e.g. workers_per_az=2 → { "w-2a-1"={...}, "w-2a-2"={...}, "w-2b-1"={...}, ... }
@@ -87,6 +97,7 @@ resource "aws_instance" "workers" {
   vpc_security_group_ids = var.worker_security_group_ids
   iam_instance_profile   = var.iam_instance_profile
   source_dest_check      = false
+  user_data              = local.ssm_user_data
 
   metadata_options {
     http_endpoint               = "enabled"

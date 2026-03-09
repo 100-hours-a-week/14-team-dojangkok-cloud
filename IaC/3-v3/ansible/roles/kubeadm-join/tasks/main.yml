@@ -9,7 +9,7 @@
   register: kubelet_conf
 
 - name: Join cluster
-  command: "{{ hostvars[groups['role_control_plane'][0]].kubeadm_join_command }}"
+  command: "{{ hostvars[groups['role_control_plane'][0]].kubeadm_join_command }} --node-name={{ inventory_hostname }}"
   when: not kubelet_conf.stat.exists
 
 - name: Label worker node (from CP)

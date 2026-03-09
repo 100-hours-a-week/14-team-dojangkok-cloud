@@ -30,6 +30,8 @@
 - name: Install cluster components
   hosts: role_control_plane
   become: true
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
   roles:
     - calico
     - ebs-csi

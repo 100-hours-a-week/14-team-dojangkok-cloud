@@ -83,3 +83,28 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   role       = aws_iam_role.k8s_node.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
+
+# --- S3 for Ansible SSM file transfer ---
+
+resource "aws_iam_role_policy" "ssm_s3" {
+  name = "ssm-s3-transfer"
+  role = aws_iam_role.k8s_node.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        "arn:aws:s3:::dojangkok-v3-ansible-ssm",
+        "arn:aws:s3:::dojangkok-v3-ansible-ssm/*"
+      ]
+    }]
+  })
+}

@@ -23,7 +23,7 @@
       spec:
         calicoNetwork:
           ipPools:
-            - cidr: {{ pod_cidr }}
+            - cidr: "{{ pod_cidr }}"
               encapsulation: VXLAN
               natOutgoing: Enabled
           mtu: {{ calico_vxlan_mtu }}
