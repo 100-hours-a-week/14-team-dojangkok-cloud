@@ -30,6 +30,7 @@ compose:
   ansible_connection: "'aws_ssm'"
   ansible_aws_ssm_region: "'ap-northeast-2'"
   ansible_aws_ssm_bucket_name: "'dojangkok-v3-ansible-ssm'"
+  ansible_aws_ssm_timeout: 360
   ansible_user: ubuntu
   k8s_role: tags['k8s:role']
   k8s_nodepool: tags['k8s:nodepool']
