@@ -1,0 +1,24 @@
+# ============================================================
+# V3 K8S Ansible — kubeadm join (Worker 노드)
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Check if already joined
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Join cluster
+  command: "{{ hostvars[groups['role_control_plane'][0]].kubeadm_join_command }}"
+  when: not kubelet_conf.stat.exists
+
+- name: Label worker node (from CP)
+  delegate_to: "{{ groups['role_control_plane'][0] }}"
+  become_user: ubuntu
+  command: >
+    kubectl label node {{ inventory_hostname }}
+    node-role.kubernetes.io/worker=
+    dojangkok.cloud/nodepool={{ k8s_nodepool | default('default') }}
+    topology.kubernetes.io/zone={{ node_az }}
+    --overwrite
+  changed_when: false

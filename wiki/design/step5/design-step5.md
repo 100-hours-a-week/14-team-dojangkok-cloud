@@ -413,6 +413,8 @@ NAT Instance는 AZ별로 배치하여 AZ 장애에 대비하지만, AZ는 정상
 
 > **결정: NAT Instance × 3 (t4g.nano, AZ별 ASG Min=1/Max=1) — 3-AZ 독립 + 인스턴스 자동 복구. 라우팅 테이블 AZ별 분리. 월 ~$11.4**
 
+> **운영 노트 (k8s-dev 환경)**: dev에서는 비용 최적화를 위해 **NAT × 1 (ASG Min=1/Max=1, multi-AZ 서브넷)**로 운영한다. 모든 AZ의 private RT가 단일 NAT를 가리키며, cross-AZ 트래픽 비용(~$0.01/GB)은 dev 트래픽 수준에서 무시 가능하다. ASG가 multi-AZ 서브넷을 가지므로 NAT가 있는 AZ 장애 시 다른 AZ에 자동 재생성된다. prod 전환 시 원안(NAT × 3, AZ별 분리)을 적용한다.
+
 ---
 
 

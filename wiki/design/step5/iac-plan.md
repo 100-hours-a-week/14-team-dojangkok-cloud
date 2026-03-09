@@ -376,6 +376,8 @@ NAT Instance당 EIP 1개 (총 3개). V2 모듈이 이미 per-instance EIP 생성
 
 > **주의**: ASG 래핑 시 EIP를 Launch Template이 아닌 ASG lifecycle hook 또는 user_data에서 연결해야 함 (ASG 교체 시 EIP 재연결).
 
+> **운영 노트 (k8s-dev 환경)**: dev에서는 NAT × 1 (ASG, multi-AZ 서브넷)로 운영. user_data에서 EIP 연결 + 모든 AZ private RT의 default route 갱신을 수행한다. NAT IAM에 `ec2:AssociateAddress`, `ec2:ReplaceRoute` 권한 추가 필요. prod 전환 시 원안(AZ별 NAT × 3)을 적용한다.
+
 ---
 
 ### 8. IAM

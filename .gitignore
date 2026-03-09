@@ -59,4 +59,5 @@ service-account*.json
 *.tfplan
 *.plan
 *.tfplan.json
+tfplan
 wiki/design/step5/design-step5_old.md

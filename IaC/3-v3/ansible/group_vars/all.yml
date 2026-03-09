@@ -1,0 +1,28 @@
+# ============================================================
+# V3 K8S Ansible — 전체 그룹 변수
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+# K8S 버전
+k8s_version: "1.31"
+k8s_minor: "1.31.0"
+
+# 네트워크
+pod_cidr: "192.168.0.0/16"       # Calico default
+service_cidr: "10.96.0.0/12"     # kubeadm default
+calico_vxlan_mtu: 8951            # AWS Jumbo Frame(9001) - VXLAN overhead(50)
+
+# Gateway Fabric
+gateway_nodeport_http: 30080
+gateway_nodeport_https: 30443
+
+# containerd
+containerd_version: "1.7"
+
+# 클러스터
+cluster_name: "dojangkok-v3"
+
+# SSM을 통한 접근 (SSH 대신)
+ansible_connection: aws_ssm
+ansible_aws_ssm_region: ap-northeast-2
+ansible_aws_ssm_profile: tf
