@@ -52,8 +52,8 @@
 
 - name: Label CP node
   command: >
-    kubectl label node {{ inventory_hostname }}
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    label node {{ inventory_hostname }}
     node-role.kubernetes.io/control-plane=
     --overwrite
-  become_user: ubuntu
   changed_when: false
