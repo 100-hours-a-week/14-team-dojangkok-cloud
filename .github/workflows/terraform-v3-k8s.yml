@@ -13,6 +13,10 @@ on:
         options:
           - plan
           - apply
+      ref:
+        description: "체크아웃할 커밋 SHA (apply 시 필수, plan은 선택)"
+        required: false
+        type: string
 
 concurrency:
   group: terraform-v3-k8s-dev
@@ -39,6 +43,8 @@ jobs:
       plan_exitcode: ${{ steps.plan.outputs.exitcode }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -131,10 +137,16 @@ jobs:
   apply:
     name: "Terraform Apply"
     needs: plan
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply' && needs.plan.outputs.plan_exitcode == '2'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'apply' &&
+      github.event.inputs.ref != '' &&
+      needs.plan.outputs.plan_exitcode == '2'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
