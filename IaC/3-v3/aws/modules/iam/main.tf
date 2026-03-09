@@ -98,7 +98,8 @@ resource "aws_iam_role_policy" "ssm_s3" {
         "s3:GetObject",
         "s3:PutObject",
         "s3:DeleteObject",
-        "s3:GetBucketLocation"
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
       ]
       Resource = [
         "arn:aws:s3:::dojangkok-v3-ansible-ssm",
