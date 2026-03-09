@@ -1,13 +1,12 @@
 #!/bin/bash
 # ============================================================
 # V3 K8S IaC — NAT Instance user_data
-# ASG 교체 시 자동으로 EIP 연결 + RT route 갱신
+# ASG 교체 시 자동으로 source/dest check 비활성화 + RT route 갱신
 # Branch: feat/v3-k8s-iac
 # ============================================================
 set -euo pipefail
 
 REGION="${region}"
-EIP_ALLOC_ID="${eip_alloc_id}"
 ROUTE_TABLE_IDS="${route_table_ids}"
 VPC_CIDR="${vpc_cidr}"
 
@@ -16,13 +15,6 @@ TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
 INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
   http://169.254.169.254/latest/meta-data/instance-id)
-
-# --- Associate EIP ---
-aws ec2 associate-address \
-  --instance-id "$INSTANCE_ID" \
-  --allocation-id "$EIP_ALLOC_ID" \
-  --region "$REGION" \
-  --allow-reassociation
 
 # --- Disable source/dest check ---
 aws ec2 modify-instance-attribute \

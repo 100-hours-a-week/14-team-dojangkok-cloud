@@ -16,11 +16,6 @@ output "workers" {
 
 # --- Networking ---
 
-output "nat_eip_public_ip" {
-  description = "NAT EIP 퍼블릭 IP (모니터링 SG 허용 등)"
-  value       = module.nat_instance.eip_public_ip
-}
-
 output "k8s_subnet_ids" {
   description = "K8S 서브넷 ID 맵"
   value       = module.k8s_networking.private_subnet_ids
