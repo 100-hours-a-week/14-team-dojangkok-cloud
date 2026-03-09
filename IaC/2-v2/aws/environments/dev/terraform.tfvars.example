@@ -24,3 +24,17 @@ landing_page_bucket_domain = "dojangkok-landing-page.s3.ap-northeast-2.amazonaws
 
 # Monitoring source CIDRs (optional, for cross-VPC monitoring)
 monitoring_source_cidrs = []
+
+# AI Server (GCP → AWS migration)
+custom_ami_id = "<PACKER_DOCKER_BASE_AMI_ID>"  # packer build 결과물
+
+# AI Secrets (passed via -var flag, do NOT commit)
+# ai_vllm_api_key          = "dojangkok-vllm-key"
+# ai_backend_internal_token = "placeholder"
+# ai_ocr_api               = "up_xxx"
+# ai_rabbitmq_url          = "amqps://dojangkok:pass@mq.dev.dojangkok.cloud:5671/"
+
+# Monitoring endpoints
+# loki_url       = "http://15.165.213.200:3100/loki/api/v1/push"
+# tempo_endpoint = "15.165.213.200:4317"
+# prometheus_url = "http://15.165.213.200:9090/api/v1/write"

@@ -39,3 +39,12 @@ output "nlb_dns_name" {
   value = module.nlb.nlb_dns_name
 }
 
+# AI Server
+output "ai_private_ip" {
+  value = module.compute.private_ips["ai"]
+}
+
+output "ai_ecr_repository_url" {
+  value = module.ai_ecr.repository_urls["dev-dojangkok-ai"]
+}
+

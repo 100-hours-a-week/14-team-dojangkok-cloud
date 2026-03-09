@@ -24,6 +24,8 @@ locals {
     # MQ (RabbitMQ)
     "mq-2a" = { cidr = "10.1.50.0/24", az = "a", tier = "private" }
     "mq-2c" = { cidr = "10.1.51.0/24", az = "c", tier = "private" }
+    # AI Server
+    "ai-2a" = { cidr = "10.0.15.0/24", az = "a", tier = "private" }
   }
 
   public_subnets  = { for k, v in local.subnets : k => v if v.tier == "public" }
@@ -85,6 +87,7 @@ module "security_groups" {
       description = "Network Load Balancer"
       ingress_rules = [
         { from_port = 5671, to_port = 5671, protocol = "tcp", cidr_blocks = var.gcp_nat_ip != "" ? ["${var.gcp_nat_ip}/32"] : [], description = "TLS from GCP" },
+        { from_port = 5671, to_port = 5671, protocol = "tcp", cidr_blocks = ["10.0.15.0/24"], description = "TLS from AI server" },
       ]
     }
     fe = {
@@ -116,6 +119,12 @@ module "security_groups" {
       ingress_rules = [
         { from_port = 5672, to_port = 5672, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "AMQP" },
         { from_port = 15672, to_port = 15672, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "Management UI" },
+      ]
+    }
+    ai = {
+      description = "AI Server (FastAPI)"
+      ingress_rules = [
+        { from_port = 8000, to_port = 8000, protocol = "tcp", cidr_blocks = [var.vpc_cidr], description = "FastAPI" },
       ]
     }
   }
@@ -154,6 +163,54 @@ module "compute" {
       security_group_ids   = [module.security_groups.security_group_ids["mq"]]
       iam_instance_profile = var.iam_instance_profile_names["mq"]
       volume_size          = var.mq_volume_size
+    }
+    ai = {
+      instance_type        = var.ai_instance_type
+      ami                  = var.custom_ami_id
+      subnet_id            = module.networking.private_subnet_ids["ai-2a"]
+      security_group_ids   = [module.security_groups.security_group_ids["ai"]]
+      iam_instance_profile = var.iam_instance_profile_names["ai"]
+      volume_size          = var.ai_volume_size
+      user_data = templatefile("${path.module}/scripts/startup-ai-server.sh", {
+        region       = var.region
+        environment  = var.environment
+        project_name = var.project_name
+        ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+        compose_content = templatefile("../../gcp/docker-compose/ai-server.yml", {
+          AI_SERVER_IMAGE                = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/dev-dojangkok-ai:latest"
+          APP_ENV                        = var.environment
+          VLLM_BASE_URL                  = var.ai_vllm_base_url
+          VLLM_MODEL                     = var.ai_vllm_model
+          VLLM_LORA_ADAPTER_CHECKLIST    = var.ai_vllm_lora_adapter_checklist
+          VLLM_LORA_ADAPTER_EASYCONTRACT = var.ai_vllm_lora_adapter_easycontract
+          CHROMADB_URL                   = ""
+          BACKEND_CALLBACK_BASE_URL      = var.ai_backend_callback_base_url
+          HTTP_TIMEOUT_SEC               = var.ai_http_timeout_sec
+          RABBITMQ_ENABLED                           = "true"
+          RABBITMQ_PREFETCH_COUNT                    = "3"
+          RABBITMQ_DECLARE_PASSIVE                   = "true"
+          RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT    = var.rabbitmq_request_exchange_easy_contract
+          RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT       = var.rabbitmq_request_queue_easy_contract
+          RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT = var.rabbitmq_request_routing_key_easy_contract
+          RABBITMQ_REQUEST_EXCHANGE_CHECKLIST        = var.rabbitmq_request_exchange_checklist
+          RABBITMQ_REQUEST_QUEUE_CHECKLIST           = var.rabbitmq_request_queue_checklist
+          RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST     = var.rabbitmq_request_routing_key_checklist
+          RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT     = var.rabbitmq_cancel_exchange_easy_contract
+          RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT        = var.rabbitmq_cancel_queue_easy_contract
+          RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT  = var.rabbitmq_cancel_routing_key_easy_contract
+          RABBITMQ_RESULT_EXCHANGE                   = var.rabbitmq_result_exchange
+          RABBITMQ_RESULT_QUEUE                      = var.rabbitmq_result_queue
+          RABBITMQ_RESULT_ROUTING_KEY                = var.rabbitmq_result_routing_key
+        })
+        alloy_config = templatefile("../../gcp/docker-compose/alloy/config.alloy", {
+          hostname             = "${var.project_name}-ai"
+          service_name         = "ai-server"
+          loki_url             = var.loki_url
+          tempo_endpoint       = var.tempo_endpoint
+          prometheus_url       = var.prometheus_url
+          enable_dcgm_exporter = false
+        })
+      })
     }
   }
 }
@@ -277,4 +334,31 @@ module "cloudfront" {
   s3_bucket_domain_name = var.landing_page_bucket_domain
   acm_certificate_arn   = var.cloudfront_acm_arn
   aliases               = ["home.${var.domain_name}"]
+}
+
+# --- Data Sources ---
+data "aws_caller_identity" "current" {}
+
+# --- AI Server: SSM Parameters (Secrets) ---
+resource "aws_ssm_parameter" "ai_secrets" {
+  for_each = {
+    "vllm-api-key"          = var.ai_vllm_api_key
+    "backend-internal-token" = var.ai_backend_internal_token
+    "ocr-api"               = var.ai_ocr_api
+    "rabbitmq-url"          = var.ai_rabbitmq_url
+  }
+
+  name  = "/dojangkok/${var.environment}/ai/${each.key}"
+  type  = "SecureString"
+  value = each.value
+
+  tags = {
+    Name = "${var.project_name}-ai-${each.key}"
+  }
+}
+
+# --- AI Server: ECR Repository ---
+module "ai_ecr" {
+  source       = "../../modules/ecr"
+  repositories = ["dev-dojangkok-ai"]
 }
