@@ -1,0 +1,134 @@
+name: "Ansible V3 K8S"
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["IaC/3-v3/ansible/**"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "실행할 작업"
+        required: true
+        type: choice
+        options:
+          - syntax-check
+          - deploy
+      ref:
+        description: "체크아웃할 커밋 SHA (deploy 시 필수)"
+        required: false
+        type: string
+
+concurrency:
+  group: ansible-v3-k8s-dev
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: "ap-northeast-2"
+  ANSIBLE_DIR: "IaC/3-v3/ansible"
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Syntax Check: PR 또는 수동 트리거
+  # ──────────────────────────────────────────────
+  syntax-check:
+    name: "Ansible Syntax Check"
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'syntax-check')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ref
+        if: inputs.ref != ''
+        run: git checkout ${{ inputs.ref }}
+
+      - name: Install Ansible
+        run: pip install ansible boto3
+
+      - name: Install amazon.aws collection
+        run: ansible-galaxy collection install amazon.aws
+
+      - name: Ansible Syntax Check
+        run: ansible-playbook playbooks/site.yml --syntax-check
+        working-directory: ${{ env.ANSIBLE_DIR }}
+
+      - name: Ansible Lint (optional)
+        run: |
+          pip install ansible-lint
+          ansible-lint playbooks/site.yml
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        continue-on-error: true
+
+      - name: Comment Result on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `### Ansible Syntax Check Result ✅
+            | Step | Status |
+            |------|--------|
+            | Syntax Check | ${'${{ steps.syntax.outcome || 'success' }}' === 'failure' ? '❌' : '✅'} |
+            | Lint | ${'${{ steps.lint.outcome || 'success' }}' === 'failure' ? '⚠️' : '✅'} |
+
+            *Pushed by: @${{ github.actor }}*`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const bot = comments.find(c => c.user.type === 'Bot' && c.body.includes('Ansible Syntax Check Result'));
+            const params = { owner: context.repo.owner, repo: context.repo.repo, body };
+            if (bot) { await github.rest.issues.updateComment({ ...params, comment_id: bot.id }); }
+            else { await github.rest.issues.createComment({ ...params, issue_number: context.issue.number }); }
+
+  # ──────────────────────────────────────────────
+  # Deploy: 수동 트리거만 (workflow_dispatch + action=deploy + ref 필수)
+  # ──────────────────────────────────────────────
+  deploy:
+    name: "Ansible Deploy"
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'deploy' &&
+      github.event.inputs.ref != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ref
+        run: git checkout ${{ inputs.ref }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ANSIBLE_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Ansible + dependencies
+        run: pip install ansible boto3
+
+      - name: Install amazon.aws collection
+        run: ansible-galaxy collection install amazon.aws
+
+      - name: Install SSM plugin
+        run: |
+          curl -so session-manager-plugin.deb \
+            "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb"
+          sudo dpkg -i session-manager-plugin.deb
+
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook \
+            -i inventory/aws_ec2.yaml \
+            playbooks/site.yml \
+            -e "ansible_aws_ssm_profile=" \
+            -v
+        working-directory: ${{ env.ANSIBLE_DIR }}
