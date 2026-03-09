@@ -20,6 +20,7 @@
         name: default
       spec:
         calicoNetwork:
+          bgp: Disabled
           ipPools:
             - cidr: "{{ pod_cidr }}"
               encapsulation: VXLAN
