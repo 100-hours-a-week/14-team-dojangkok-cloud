@@ -1,6 +1,6 @@
 # ============================================================
 # V3 K8S IaC — NAT Instance (ASG 래핑, dev: 1대 / prod: AZ별)
-# ASG Min=Max=1 + user_data에서 EIP 연결 + RT route 갱신
+# ASG Min=Max=1 + user_data에서 RT route 갱신
 # Branch: feat/v3-k8s-iac
 # ============================================================
 
@@ -54,17 +54,7 @@ resource "aws_security_group" "nat" {
   })
 }
 
-# --- EIP (ASG 교체 시 user_data에서 재연결) ---
-
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = merge(var.common_tags, {
-    Name = "${var.project_name}-nat-eip"
-  })
-}
-
-# --- IAM Role (NAT 전용: SSM + EIP/Route 권한) ---
+# --- IAM Role (NAT 전용: SSM + Route 권한) ---
 
 resource "aws_iam_role" "nat" {
   name = "${var.project_name}-nat-role"
@@ -103,7 +93,6 @@ resource "aws_iam_role_policy" "nat_self_heal" {
       {
         Effect = "Allow"
         Action = [
-          "ec2:AssociateAddress",
           "ec2:ModifyInstanceAttribute",
           "ec2:ReplaceRoute",
           "ec2:CreateRoute"
@@ -147,7 +136,6 @@ resource "aws_launch_template" "nat" {
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh.tpl", {
     vpc_cidr        = var.vpc_cidr
-    eip_alloc_id    = aws_eip.nat.id
     route_table_ids = join(",", var.route_table_ids)
     region          = var.region
   }))
