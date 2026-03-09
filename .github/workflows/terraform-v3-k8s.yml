@@ -45,8 +45,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || '' }}
           fetch-depth: 0
+
+      - name: Checkout ref
+        if: inputs.ref != ''
+        run: git checkout ${{ inputs.ref }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -153,8 +156,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0
+
+      - name: Checkout ref
+        run: git checkout ${{ inputs.ref }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -194,8 +199,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0
+
+      - name: Checkout ref
+        run: git checkout ${{ inputs.ref }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
