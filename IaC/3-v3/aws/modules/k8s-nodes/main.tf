@@ -66,9 +66,11 @@ resource "aws_instance" "control_plane" {
 locals {
   ssm_user_data = <<-EOF
     #!/bin/bash
-    snap install amazon-ssm-agent --classic
-    systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
-    systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service
+    mkdir -p /tmp/ssm && cd /tmp/ssm
+    curl -fsSL "https://s3.amazonaws.com/ec2-downloads-ssm/latest/debian_arm64/amazon-ssm-agent.deb" -o amazon-ssm-agent.deb
+    dpkg -i amazon-ssm-agent.deb
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
   EOF
 
   # workers_per_az × 3 AZ → 플랫 맵 생성
