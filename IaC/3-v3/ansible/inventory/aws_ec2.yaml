@@ -1,0 +1,33 @@
+# ============================================================
+# V3 K8S Ansible — Dynamic Inventory (AWS EC2 plugin)
+# k8s:cluster-name 태그로 클러스터 노드 자동 인식
+# Branch: feat/v3-k8s-iac
+# ============================================================
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - ap-northeast-2
+
+filters:
+  "tag:k8s:cluster-name": "dojangkok-v3"
+  instance-state-name: running
+
+keyed_groups:
+  # k8s:role 태그 → role_control_plane / role_worker 그룹
+  - key: tags['k8s:role'] | default('unknown')
+    prefix: role
+    separator: "_"
+  # k8s:nodepool 태그 → nodepool_default / nodepool_system 그룹
+  - key: tags['k8s:nodepool'] | default('default')
+    prefix: nodepool
+    separator: "_"
+
+hostnames:
+  - private-ip-address
+
+compose:
+  ansible_host: private_ip_address
+  ansible_user: ubuntu
+  k8s_role: tags['k8s:role']
+  k8s_nodepool: tags['k8s:nodepool']
+  node_az: placement.availability_zone

@@ -1,0 +1,218 @@
+name: "Terraform V3 K8S"
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["IaC/3-v3/aws/**"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "실행할 Terraform 작업"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      ref:
+        description: "체크아웃할 커밋 SHA (apply/destroy 시 필수, plan은 선택)"
+        required: false
+        type: string
+
+concurrency:
+  group: terraform-v3-k8s-dev
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.14.6"
+  WORKING_DIR: "IaC/3-v3/aws/environments/k8s-dev"
+  AWS_REGION: "ap-northeast-2"
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Plan: PR 또는 수동 트리거
+  # ──────────────────────────────────────────────
+  plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || '' }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check -recursive -diff
+        working-directory: IaC/3-v3/aws
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          DESTROY_FLAG=""
+          if [ "${{ inputs.action }}" = "destroy" ]; then
+            DESTROY_FLAG="-destroy"
+          fi
+          terraform plan \
+            -var="vpc_id=${{ secrets.K8S_DEV_VPC_ID }}" \
+            -var="ssl_certificate_arn=${{ secrets.K8S_DEV_SSL_CERT_ARN }}" \
+            $DESTROY_FLAG \
+            -input=false -no-color -detailed-exitcode -out=tfplan \
+            2>&1 | tee plan_output.txt
+        working-directory: ${{ env.WORKING_DIR }}
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planPath = '${{ env.WORKING_DIR }}/plan_output.txt';
+            let plan = fs.existsSync(planPath) ? fs.readFileSync(planPath, 'utf8') : 'Plan output not available';
+            if (plan.length > 60000) plan = plan.substring(0, 60000) + '\n... (truncated)';
+
+            const body = `### Terraform Plan Result
+            | Step | Status |
+            |------|--------|
+            | Format | ${'${{ steps.fmt.outcome }}' === 'success' ? '✅' : '❌'} |
+            | Init | ${'${{ steps.init.outcome }}' === 'success' ? '✅' : '❌'} |
+            | Validate | ${'${{ steps.validate.outcome }}' === 'success' ? '✅' : '❌'} |
+            | Plan | ${'${{ steps.plan.outcome }}' === 'success' ? '✅ (no changes)' : '⚠️ (has changes)'} |
+
+            <details><summary>Plan Output</summary>
+
+            \`\`\`terraform
+            ${plan}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}*`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            const bot = comments.find(c => c.user.type === 'Bot' && c.body.includes('Terraform Plan Result'));
+            const params = { owner: context.repo.owner, repo: context.repo.repo, body };
+            if (bot) { await github.rest.issues.updateComment({ ...params, comment_id: bot.id }); }
+            else { await github.rest.issues.createComment({ ...params, issue_number: context.issue.number }); }
+
+      - name: Fail on Error
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1
+
+      - name: Upload Plan
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}/tfplan
+          retention-days: 5
+
+  # ──────────────────────────────────────────────
+  # Apply: 수동 트리거만 (workflow_dispatch + action=apply)
+  # ──────────────────────────────────────────────
+  apply:
+    name: "Terraform Apply"
+    needs: plan
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'apply' &&
+      github.event.inputs.ref != '' &&
+      needs.plan.outputs.plan_exitcode == '2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Apply
+        run: terraform apply -input=false tfplan
+        working-directory: ${{ env.WORKING_DIR }}
+
+  # ──────────────────────────────────────────────
+  # Destroy: 수동 트리거만 (workflow_dispatch + action=destroy + ref 필수)
+  # ──────────────────────────────────────────────
+  destroy:
+    name: "Terraform Destroy"
+    needs: plan
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'destroy' &&
+      github.event.inputs.ref != '' &&
+      needs.plan.outputs.plan_exitcode == '2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Destroy
+        run: terraform apply -input=false tfplan
+        working-directory: ${{ env.WORKING_DIR }}

@@ -1,0 +1,34 @@
+# ============================================================
+# V3 K8S Ansible — NGINX Gateway Fabric (NodePort 30080/30443)
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Install Gateway API CRDs
+  become_user: ubuntu
+  command: >
+    kubectl apply -f
+    https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+  register: gateway_api_result
+  changed_when: "'created' in gateway_api_result.stdout"
+
+- name: Add NGINX Gateway Fabric Helm repo
+  become_user: ubuntu
+  command: helm repo add nginx-gateway https://kubernetes-sigs.github.io/nginx-gateway-fabric
+  register: helm_repo
+  failed_when: helm_repo.rc != 0 and 'already exists' not in helm_repo.stderr
+  changed_when: "'added' in helm_repo.stdout"
+
+- name: Update Helm repos
+  become_user: ubuntu
+  command: helm repo update
+
+- name: Install NGINX Gateway Fabric
+  become_user: ubuntu
+  command: >
+    helm upgrade --install nginx-gateway nginx-gateway/nginx-gateway-fabric
+    --namespace nginx-gateway --create-namespace
+    --set service.type=NodePort
+    --set service.ports[0].port=80,service.ports[0].nodePort={{ gateway_nodeport_http }}
+    --set service.ports[1].port=443,service.ports[1].nodePort={{ gateway_nodeport_https }}
+  register: ngf_install
+  changed_when: "'deployed' in ngf_install.stdout or 'upgraded' in ngf_install.stdout"

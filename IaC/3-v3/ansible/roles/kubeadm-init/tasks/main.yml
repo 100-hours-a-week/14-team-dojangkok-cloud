@@ -1,0 +1,53 @@
+# ============================================================
+# V3 K8S Ansible — kubeadm init (CP 초기화)
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Check if cluster already initialized
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_init_check
+
+- name: Initialize control plane
+  command: >
+    kubeadm init
+    --pod-network-cidr={{ pod_cidr }}
+    --service-cidr={{ service_cidr }}
+    --kubernetes-version={{ k8s_minor }}
+    --node-name={{ inventory_hostname }}
+  when: not kubeadm_init_check.stat.exists
+  register: kubeadm_init_output
+
+- name: Create .kube directory for ubuntu user
+  file:
+    path: /home/ubuntu/.kube
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Copy admin.conf to ubuntu user
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ubuntu/.kube/config
+    remote_src: true
+    owner: ubuntu
+    group: ubuntu
+    mode: "0644"
+
+- name: Generate join command
+  command: kubeadm token create --print-join-command
+  register: join_command
+  changed_when: false
+
+- name: Store join command as fact
+  set_fact:
+    kubeadm_join_command: "{{ join_command.stdout }}"
+
+- name: Label CP node
+  command: >
+    kubectl label node {{ inventory_hostname }}
+    node-role.kubernetes.io/control-plane=
+    --overwrite
+  become_user: ubuntu
+  changed_when: false

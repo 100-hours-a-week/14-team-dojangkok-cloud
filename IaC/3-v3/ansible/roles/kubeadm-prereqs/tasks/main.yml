@@ -1,0 +1,39 @@
+# ============================================================
+# V3 K8S Ansible — kubeadm/kubelet/kubectl 설치
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Add Kubernetes apt key
+  apt_key:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key"
+    keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    state: present
+
+- name: Add Kubernetes apt repository
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+    state: present
+    filename: kubernetes
+
+- name: Install kubeadm, kubelet, kubectl
+  apt:
+    name:
+      - "kubeadm={{ k8s_minor }}-*"
+      - "kubelet={{ k8s_minor }}-*"
+      - "kubectl={{ k8s_minor }}-*"
+    state: present
+    update_cache: true
+
+- name: Hold kubernetes packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubeadm
+    - kubelet
+    - kubectl
+
+- name: Enable kubelet
+  systemd:
+    name: kubelet
+    enabled: true

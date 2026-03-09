@@ -1,0 +1,36 @@
+# ============================================================
+# V3 K8S Ansible — 전체 클러스터 부트스트랩 플레이북
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+# Phase 1: 전체 노드 공통 설정
+- name: Common setup (all nodes)
+  hosts: all
+  become: true
+  roles:
+    - common
+    - containerd
+    - kubeadm-prereqs
+
+# Phase 2: Control Plane 초기화
+- name: Initialize Control Plane
+  hosts: role_control_plane
+  become: true
+  roles:
+    - kubeadm-init
+
+# Phase 3: Worker 노드 Join
+- name: Join Worker nodes
+  hosts: role_worker
+  become: true
+  roles:
+    - kubeadm-join
+
+# Phase 4: CNI + 클러스터 컴포넌트 (CP에서 실행)
+- name: Install cluster components
+  hosts: role_control_plane
+  become: true
+  roles:
+    - calico
+    - ebs-csi
+    - gateway-fabric

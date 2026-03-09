@@ -1,0 +1,38 @@
+# ============================================================
+# V3 K8S Ansible — containerd 설치 + SystemdCgroup 설정
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Install containerd
+  apt:
+    name: containerd
+    state: present
+
+- name: Create containerd config directory
+  file:
+    path: /etc/containerd
+    state: directory
+
+- name: Generate default containerd config
+  command: containerd config default
+  register: containerd_config
+  changed_when: false
+
+- name: Write containerd config
+  copy:
+    content: "{{ containerd_config.stdout }}"
+    dest: /etc/containerd/config.toml
+  notify: restart containerd
+
+- name: Enable SystemdCgroup in containerd
+  lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    line: '            SystemdCgroup = true'
+  notify: restart containerd
+
+- name: Enable and start containerd
+  systemd:
+    name: containerd
+    enabled: true
+    state: started
