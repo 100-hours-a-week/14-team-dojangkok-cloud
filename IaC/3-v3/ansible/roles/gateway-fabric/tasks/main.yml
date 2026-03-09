@@ -4,28 +4,28 @@
 # ============================================================
 
 - name: Install Gateway API CRDs
-  become_user: ubuntu
   command: >
-    kubectl apply -f
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f
     https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
   register: gateway_api_result
   changed_when: "'created' in gateway_api_result.stdout"
 
 - name: Add NGINX Gateway Fabric Helm repo
-  become_user: ubuntu
-  command: helm repo add nginx-gateway https://kubernetes-sigs.github.io/nginx-gateway-fabric
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    repo add nginx-gateway https://kubernetes-sigs.github.io/nginx-gateway-fabric
   register: helm_repo
   failed_when: helm_repo.rc != 0 and 'already exists' not in helm_repo.stderr
   changed_when: "'added' in helm_repo.stdout"
 
 - name: Update Helm repos
-  become_user: ubuntu
-  command: helm repo update
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config repo update
 
 - name: Install NGINX Gateway Fabric
-  become_user: ubuntu
   command: >
-    helm upgrade --install nginx-gateway nginx-gateway/nginx-gateway-fabric
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    upgrade --install nginx-gateway nginx-gateway/nginx-gateway-fabric
     --namespace nginx-gateway --create-namespace
     --set service.type=NodePort
     --set service.ports[0].port=80,service.ports[0].nodePort={{ gateway_nodeport_http }}

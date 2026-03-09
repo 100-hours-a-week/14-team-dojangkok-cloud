@@ -14,9 +14,9 @@
 
 - name: Label worker node (from CP)
   delegate_to: "{{ groups['role_control_plane'][0] }}"
-  become_user: ubuntu
   command: >
-    kubectl label node {{ inventory_hostname }}
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    label node {{ inventory_hostname }}
     node-role.kubernetes.io/worker=
     dojangkok.cloud/nodepool={{ k8s_nodepool | default('default') }}
     topology.kubernetes.io/zone={{ node_az }}
