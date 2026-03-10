@@ -11,6 +11,7 @@
     - common
     - containerd
     - kubeadm-prereqs
+    - ecr-credential-provider
 
 # Phase 2: Control Plane 초기화
 - name: Initialize Control Plane

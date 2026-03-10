@@ -19,6 +19,9 @@ gateway_nodeport_https: 30443
 # containerd
 containerd_version: "1.7"
 
+# ECR Credential Provider
+ecr_credential_provider_version: "1.31.1"
+
 # 클러스터
 cluster_name: "dojangkok-v3"
 

@@ -1,0 +1,50 @@
+# ============================================================
+# V3 K8S Ansible — ECR Credential Provider (kubelet 플러그인)
+# Branch: feat/v3-k8s-iac
+# ============================================================
+# kubelet이 IAM role로 ECR 인증 토큰을 자동 갱신하도록 설정.
+# imagePullSecrets 불필요, 토큰 만료 걱정 없음.
+
+- name: Download ecr-credential-provider binary
+  get_url:
+    url: "https://artifacts.k8s.io/binaries/cloud-provider-aws/v{{ ecr_credential_provider_version }}/linux/arm64/ecr-credential-provider-linux-arm64"
+    dest: /usr/local/bin/ecr-credential-provider
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create credential provider config directory
+  file:
+    path: /etc/kubernetes
+    state: directory
+    mode: "0755"
+
+- name: Write credential provider config
+  copy:
+    dest: /etc/kubernetes/ecr-credential-provider-config.yaml
+    mode: "0644"
+    content: |
+      apiVersion: kubelet.config.k8s.io/v1
+      kind: CredentialProviderConfig
+      providers:
+        - name: ecr-credential-provider
+          matchImages:
+            - "*.dkr.ecr.*.amazonaws.com"
+            - "*.dkr.ecr.*.amazonaws.com.cn"
+            - "*.dkr.ecr-fips.*.amazonaws.com"
+          defaultCacheDuration: "12h"
+          apiVersion: credentialprovider.kubelet.k8s.io/v1
+
+- name: Configure kubelet extra args for credential provider
+  copy:
+    dest: /etc/default/kubelet
+    mode: "0644"
+    content: |
+      KUBELET_EXTRA_ARGS=--image-credential-provider-config=/etc/kubernetes/ecr-credential-provider-config.yaml --image-credential-provider-bin-dir=/usr/local/bin
+  notify: restart kubelet
+
+- name: Verify ecr-credential-provider binary
+  command: /usr/local/bin/ecr-credential-provider --version
+  register: ecp_version
+  changed_when: false
+  failed_when: false

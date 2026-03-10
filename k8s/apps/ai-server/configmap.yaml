@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-server-config
+  namespace: dojangkok
+  labels:
+    app.kubernetes.io/name: ai-server
+data:
+  # --- App ---
+  APP_ENV: "prod"
+  HTTP_TIMEOUT_SEC: "30"
+  CHROMADB_URL: ""
+
+  # --- vLLM ---
+  VLLM_BASE_URL: "http://63.141.33.33:22140/v1"
+  VLLM_MODEL: "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
+  VLLM_LORA_ADAPTER_CHECKLIST: "checklist"
+  VLLM_LORA_ADAPTER_EASYCONTRACT: "easycontract"
+
+  # --- RabbitMQ 설정 ---
+  RABBITMQ_ENABLED: "true"
+  RABBITMQ_PREFETCH_COUNT: "3"
+  RABBITMQ_DECLARE_PASSIVE: "true"
+
+  # --- RabbitMQ 라우팅 ---
+  RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT: "fast.exchange"
+  RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT: "easy-contract.request"
+  RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT: "easy-contract.request"
+  RABBITMQ_REQUEST_EXCHANGE_CHECKLIST: "fast.exchange"
+  RABBITMQ_REQUEST_QUEUE_CHECKLIST: "checklist.request"
+  RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST: "checklist.request"
+  RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT: "fast.exchange"
+  RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT: "cancel.request"
+  RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT: "cancel.request"
+  RABBITMQ_RESULT_EXCHANGE: "fast.exchange"
+  RABBITMQ_RESULT_QUEUE: "ai.response"
+  RABBITMQ_RESULT_ROUTING_KEY: "ai.response"
+
+  # --- 재시도 ---
+  WORKER_RETRY_MAX_ATTEMPTS: "3"
+  WORKER_RETRY_BACKOFF_BASE_SEC: "0.5"
+  EXTERNAL_RETRY_MAX_ATTEMPTS: "3"
+  EXTERNAL_RETRY_BACKOFF_BASE_SEC: "0.5"
+
+  # --- 취소 ---
+  EASY_CONTRACT_CANCEL_TTL_SEC: "3600"
+  EASY_CONTRACT_CANCEL_CLEANUP_INTERVAL_SEC: "60"
