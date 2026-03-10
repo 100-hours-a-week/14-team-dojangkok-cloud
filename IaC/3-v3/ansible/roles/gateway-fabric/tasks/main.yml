@@ -16,8 +16,8 @@
     upgrade --install nginx-gateway
     oci://ghcr.io/nginx/charts/nginx-gateway-fabric
     --namespace nginx-gateway --create-namespace
-    --set service.type=NodePort
-    --set service.ports[0].port=80,service.ports[0].nodePort={{ gateway_nodeport_http }}
-    --set service.ports[1].port=443,service.ports[1].nodePort={{ gateway_nodeport_https }}
+    --set nginx.kind=daemonSet
+    --set nginx.service.type=NodePort
+    --set-json 'nginx.service.nodePorts=[{"port":{{ gateway_nodeport_http }},"listenerPort":80}]'
   register: ngf_install
   changed_when: "'deployed' in ngf_install.stdout or 'upgraded' in ngf_install.stdout"

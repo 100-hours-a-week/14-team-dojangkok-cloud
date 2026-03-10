@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: dojangkok
+  labels:
+    app.kubernetes.io/name: frontend
+data: {}
+  # NEXT_PUBLIC_*는 빌드 시 결정 → 런타임 ConfigMap으로는 효과 없음
+  # 런타임에 필요한 env가 확인되면 여기에 추가

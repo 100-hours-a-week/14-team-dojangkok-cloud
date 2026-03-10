@@ -27,7 +27,7 @@ variable "gateway_nodeport" {
 
 variable "health_check_path" {
   type    = string
-  default = "/healthz"
+  default = "/"
 }
 
 variable "ssl_certificate_arn" {
