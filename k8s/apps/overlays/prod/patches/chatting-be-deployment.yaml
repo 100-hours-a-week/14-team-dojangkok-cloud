@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatting-be
+  namespace: dojangkok
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: chatting-be
+          resources:
+            requests:
+              cpu: 700m
+              memory: 1536Mi
+            limits:
+              cpu: 2000m
+              memory: 2048Mi

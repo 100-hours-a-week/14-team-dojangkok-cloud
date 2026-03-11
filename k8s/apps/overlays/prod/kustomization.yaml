@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
+    newName: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/prod-dojangkok-be
+    newTag: latest  # CI에서 git SHA 또는 semver로 업데이트
+  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
+    newName: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/prod-dojangkok-fe
+    newTag: latest
+  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
+    newName: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/prod-dojangkok-ai
+    newTag: latest
+  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
+    newName: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/prod-dojangkok-chatting-be
+    newTag: latest
+
+patches:
+  - path: patches/backend-deployment.yaml
+  - path: patches/frontend-deployment.yaml
+  - path: patches/ai-server-deployment.yaml
+  - path: patches/chatting-be-deployment.yaml
+  - path: patches/backend-configmap.yaml
+  - path: patches/ai-server-configmap.yaml
+  - path: patches/chatting-be-configmap.yaml
+  - path: patches/backend-external-secret.yaml
+  - path: patches/ai-server-external-secret.yaml
+  - path: patches/chatting-be-external-secret.yaml

@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-server
+  namespace: dojangkok
+spec:
+  template:
+    spec:
+      containers:
+        - name: ai-server
+          resources:
+            requests:
+              cpu: 300m
+              memory: 768Mi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi

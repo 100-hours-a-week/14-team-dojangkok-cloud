@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatting-be-config
+  namespace: dojangkok
+  labels:
+    app.kubernetes.io/name: chatting-be
+data:
+  SPRING_PROFILES_ACTIVE: "dev"
+  LOG_LEVEL: "INFO"
