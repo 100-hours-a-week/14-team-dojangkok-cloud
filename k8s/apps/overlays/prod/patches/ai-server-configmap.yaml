@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-server-config
+  namespace: dojangkok
+data:
+  APP_ENV: "prod"
+  # VLLM_BASE_URL: prod RunPod 엔드포인트로 변경 시 여기에 오버라이드
