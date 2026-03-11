@@ -1,13 +1,13 @@
-# 5단계: V3 IaC 설계 — Terraform + Ansible (v1.1.0)
+# 5단계: V3 IaC 설계 — Terraform + Ansible (v1.3.0)
 
 - 작성일: 2026-03-09
-- 최종수정일: 2026-03-09
+- 최종수정일: 2026-03-11
 - 작성자: infra (claude-code)
 - 상태: draft
 - 관련문서: `./design-step5.md` (v3.0.0), `./node-sizing.md` (v4.0.0), `./cost-comparison.md` (v3.0.0)
 
 > **스코프**: Stateless 워크로드 K8S 클러스터 구축에 필요한 인프라 코드 설계.
-> DB HA(Phase 1 EC2 → Phase 2 StatefulSet)는 별도 프로젝트로 분리 — 본 문서 범위 밖.
+> Phase 2 (DB K8S 이관) 프로젝트가 폐기됨에 따라, 본 설계에서는 DB/MQ 등 Stateful 요소를 위한 인프라 리소스(에를 들어 Data 서브넷, DB 전용 스토리지 등)는 고려하지 않습니다. (Legacy EC2 환경 잔류)
 
 ---
 
@@ -127,7 +127,7 @@ locals {
 }
 ```
 
-> Data 서브넷(DB HA용)은 별도 프로젝트에서 추가.
+> **주의**: Phase 2 (DB K8S 이관)가 폐기됨에 따라, 본 V3 네트워크 아키텍처에서는 DB HA 배치를 위한 별도의 **Data 서브넷을 구축하지 않습니다**. K8S 클러스터는 Public, Private(k8s) 서브넷 2 Tier 계층으로 단순화됩니다.
 
 #### 라우팅
 
@@ -169,6 +169,7 @@ locals {
         { from_port = 10250, to_port = 10250, protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "kubelet" },
         { from_port = 10257, to_port = 10257, protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "kube-controller-manager" },
         { from_port = 10259, to_port = 10259, protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "kube-scheduler" },
+        { from_port = 5473,  to_port = 5473,  protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "Calico Typha" },
       ]
     }
 
@@ -178,6 +179,7 @@ locals {
       ingress_rules = [
         { from_port = 10250, to_port = 10250, protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "kubelet" },
         { from_port = 4789,  to_port = 4789,  protocol = "udp", cidr_blocks = ["10.10.0.0/18"], description = "Calico VXLAN" },
+        { from_port = 5473,  to_port = 5473,  protocol = "tcp", cidr_blocks = ["10.10.0.0/18"], description = "Calico Typha" },
         { from_port = 30000, to_port = 32767, protocol = "tcp", description = "NodePort — ALB SG에서만 허용" },
       ]
     }
@@ -368,7 +370,7 @@ V2 모듈에 ASG 기능이 없으므로 **V3에서 추가 구현** 또는 별도
 방법 A: NAT Instance 모듈에 ASG 옵션 추가
 방법 B: 기존 ASG 모듈을 NAT용으로 활용 (launch template + ASG min=max=1)
 
-> 권장: 방법 B. ASG 모듈의 launch template 생성 → health check → 자동 복구 패턴 재활용.
+> 권장: 방법 B. ASG 모듈의 launch template 생성 → health check → 자동 복구 패턴 재활용. (하지만 현재 V3 코드에서는 비용과 복잡도를 이유로 Dev용 NAT 1대, Prod용 NAT 3대를 하드코딩된 EC2 인스턴스로 관리 중임. 향후 안정성 향상 시 ASG 래핑 도입 고려)
 
 #### EIP
 
@@ -571,6 +573,7 @@ IaC/3-v3/ansible/
 │   ├── common/               ← 기본 패키지, sysctl, swap off
 │   ├── containerd/           ← containerd 설치/설정
 │   ├── kubeadm-prereqs/      ← kubeadm/kubelet/kubectl 설치
+│   ├── ecr-credential-provider/ ← ECR 인증 자동화 (kubelet 플러그인)
 │   ├── kubeadm-init/         ← CP: kubeadm init
 │   ├── kubeadm-join/         ← Worker: kubeadm join
 │   ├── calico/               ← Calico CNI 설치
@@ -868,11 +871,12 @@ kubectl get svc -n nginx-gateway   # 포트가 30080/30443으로 고정되었는
 │  Phase 1: Ansible site.yml              │
 │  ① common (전체 노드)                    │
 │  ② containerd + kubeadm-prereqs (전체)   │
-│  ③ kubeadm-init (CP)                    │
-│  ④ kubeadm-join (Worker 6대)            │
-│  ⑤ calico (CP에서 적용)                  │
-│  ⑥ ebs-csi (CP에서 적용)                 │
-│  ⑦ gateway-fabric (CP에서 적용)          │
+│  ③ ecr-credential-provider (전체)        │
+│  ④ kubeadm-init (CP)                    │
+│  ⑤ kubeadm-join (Worker 6대)            │
+│  ⑥ calico (CP에서 적용)                  │
+│  ⑦ ebs-csi (CP에서 적용)                 │
+│  ⑧ gateway-fabric (CP에서 적용)          │
 └────────────────┬────────────────────────┘
                  │
 ┌────────────────▼────────────────────────┐
@@ -883,12 +887,11 @@ kubectl get svc -n nginx-gateway   # 포트가 30080/30443으로 고정되었는
 
 #### 접속 방법
 
-Private 서브넷이므로 SSH 접속은:
-- **방법 A**: Bastion Host (public 서브넷) → SSH 터널
-- **방법 B**: AWS SSM Session Manager (IAM 기반, SSH 키 불필요)
-- **방법 C**: VPN (기존 환경에 따라)
+Private 서브넷이므로 **AWS SSM Session Manager**를 사용한다.
 
-> 권장: SSM Session Manager. IAM 정책만 추가하면 되고, SG에 22번 포트 개방 불필요.
+- IAM 기반 인증 (SSH 키 불필요, SG에 22번 포트 개방 불필요)
+- K8S 노드 IAM 역할에 `AmazonSSMManagedInstanceCore` 정책 추가
+- Ansible 연동: `ansible_connection: aws_ssm` + S3 버킷(`dojangkok-v3-ansible-ssm`)을 파일 전송 채널로 사용
 
 #### Terraform → Ansible 연동
 
@@ -923,6 +926,7 @@ ansible-inventory -i inventory/aws_ec2.yml --list  # 호스트 변수 포함
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|----------|
+| v1.3.0 | 2026-03-11 | SG에 Calico Typha 포트(5473/tcp) 추가, Ansible ecr-credential-provider 역할 추가, SSH → SSM 접속 방식 변경 |
 | v1.2.0 | 2026-03-09 | NodePort 고정(Hardcoding) 반영, §19 Fault Injection 인프라/K8S 대응 아키텍처 추가 |
 | v1.1.0 | 2026-03-09 | 태그 & 라벨 전략 섹션 추가, §5 태그 규약 반영, §11 동적 인벤토리, §14 kubelet 라벨 매핑 |
 | v1.0.0 | 2026-03-09 | 초안: Terraform 모듈 구조 + Ansible 클러스터 부트스트랩 |
