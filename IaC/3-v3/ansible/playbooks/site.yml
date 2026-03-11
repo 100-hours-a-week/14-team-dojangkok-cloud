@@ -37,3 +37,4 @@
     - calico
     - ebs-csi
     - gateway-fabric
+    - argocd

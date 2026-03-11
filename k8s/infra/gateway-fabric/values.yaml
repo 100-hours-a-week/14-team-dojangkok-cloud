@@ -1,0 +1,16 @@
+# NGINX Gateway Fabric Helm values
+# Chart: oci://ghcr.io/nginx/charts/nginx-gateway-fabric
+
+nginx-gateway-fabric:
+  nginxGateway:
+    kind: DaemonSet  # 모든 Worker 노드에 배포 → ALB health check 보장
+
+  service:
+    type: NodePort
+    ports:
+      - port: 80
+        targetPort: 80
+        protocol: TCP
+        nodePort: 30080  # ALB Target Group과 일치
+
+  # GatewayClass는 차트가 자동 생성

@@ -1,0 +1,15 @@
+# kube-state-metrics Helm values
+# Chart: prometheus-community/kube-state-metrics
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+# Alloy가 scrape할 수 있도록 ServiceMonitor 비활성 (Prometheus Operator 없음)
+prometheus:
+  monitor:
+    enabled: false
