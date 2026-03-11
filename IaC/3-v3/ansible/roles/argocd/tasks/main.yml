@@ -41,3 +41,30 @@
     rollout status deployment/argocd-server
     -n argocd --timeout=120s
   changed_when: false
+
+- name: Apply ArgoCD Application (apps-dev)
+  shell: |
+    cat <<'EOF' | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: dojangkok-apps-dev
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/100-hours-a-week/14-team-dojangkok-cloud.git
+        targetRevision: feat/v3-k8s-iac
+        path: k8s/apps/overlays/dev
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: dojangkok
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+    EOF
+  register: app_apply
+  changed_when: "'configured' in app_apply.stdout or 'created' in app_apply.stdout"
