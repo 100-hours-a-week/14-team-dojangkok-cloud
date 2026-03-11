@@ -1,0 +1,21 @@
+# Grafana Alloy Helm values
+# Chart: grafana/alloy
+
+alloy:
+  mode: flow
+  clustering:
+    enabled: false
+
+controller:
+  type: DaemonSet  # 모든 노드에서 메트릭/로그 수집
+
+resources:
+  requests:
+    cpu: 40m
+    memory: 48Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Alloy config는 ConfigMap으로 별도 관리
+# config.alloy 파일에서 Prometheus remote_write, Loki push 엔드포인트 설정

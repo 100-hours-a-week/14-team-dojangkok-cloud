@@ -1,0 +1,36 @@
+# External Secrets Operator Helm values
+# Chart: external-secrets/external-secrets
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+certController:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+serviceAccount:
+  create: true
+  name: external-secrets-sa
