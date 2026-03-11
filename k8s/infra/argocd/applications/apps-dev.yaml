@@ -1,0 +1,22 @@
+# ArgoCD Application — 도장콕 앱 배포 (dev)
+# k8s/apps/overlays/dev Kustomize 경로를 자동 sync
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dojangkok-apps-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/100-hours-a-week/14-team-dojangkok-cloud.git
+    targetRevision: feat/v3-k8s-iac
+    path: k8s/apps/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dojangkok
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

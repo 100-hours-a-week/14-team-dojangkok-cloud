@@ -38,3 +38,19 @@
     rollout status deployment/external-secrets
     -n external-secrets --timeout=120s
   changed_when: false
+
+- name: Apply ClusterSecretStore
+  shell: |
+    cat <<'EOF' | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
+    apiVersion: external-secrets.io/v1beta1
+    kind: ClusterSecretStore
+    metadata:
+      name: aws-secrets-manager
+    spec:
+      provider:
+        aws:
+          service: SecretsManager
+          region: ap-northeast-2
+    EOF
+  register: css_apply
+  changed_when: "'configured' in css_apply.stdout or 'created' in css_apply.stdout"

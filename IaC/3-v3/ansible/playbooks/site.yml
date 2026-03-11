@@ -37,5 +37,5 @@
     - calico
     - ebs-csi
     - gateway-fabric
-    - argocd
     - external-secrets
+    - argocd
