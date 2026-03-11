@@ -84,6 +84,25 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# --- Secrets Manager Read Policy (ESO) ---
+
+resource "aws_iam_role_policy" "secrets_manager" {
+  name = "secrets-manager-read"
+  role = aws_iam_role.k8s_node.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ]
+      Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:dojangkok/*"
+    }]
+  })
+}
+
 # --- S3 for Ansible SSM file transfer ---
 
 resource "aws_iam_role_policy" "ssm_s3" {

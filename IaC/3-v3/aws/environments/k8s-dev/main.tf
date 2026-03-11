@@ -134,11 +134,15 @@ resource "aws_security_group_rule" "alb_to_worker_nodeport" {
 # 3. IAM — K8S 노드 역할
 # ============================================================
 
+data "aws_caller_identity" "current" {}
+
 module "iam" {
   source = "../../modules/iam"
 
-  project_name = var.project_name
-  common_tags  = local.common_tags
+  project_name   = var.project_name
+  aws_region     = var.region
+  aws_account_id = data.aws_caller_identity.current.account_id
+  common_tags    = local.common_tags
 }
 
 # ============================================================

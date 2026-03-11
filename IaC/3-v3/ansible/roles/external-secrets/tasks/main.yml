@@ -1,0 +1,40 @@
+# ============================================================
+# V3 K8S Ansible — External Secrets Operator 설치
+# Branch: feat/v3-k8s-iac
+# values.yaml: k8s/infra/external-secrets/values.yaml 과 동일한 설정
+# ============================================================
+
+- name: Add External Secrets Helm repository
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    repo add external-secrets https://charts.external-secrets.io
+  register: repo_add
+  changed_when: "'has been added' in repo_add.stdout"
+  failed_when: false
+
+- name: Update Helm repositories
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config repo update
+  changed_when: false
+
+- name: Install External Secrets Operator
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    upgrade --install external-secrets external-secrets/external-secrets
+    --namespace external-secrets --create-namespace
+    --set replicaCount=1
+    --set webhook.replicaCount=1
+    --set certController.replicaCount=1
+    --set resources.requests.cpu=25m
+    --set resources.requests.memory=64Mi
+    --set serviceAccount.create=true
+    --set serviceAccount.name=external-secrets-sa
+  register: eso_install
+  changed_when: "'deployed' in eso_install.stdout or 'upgraded' in eso_install.stdout"
+
+- name: Wait for ESO to be ready
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/external-secrets
+    -n external-secrets --timeout=120s
+  changed_when: false
