@@ -1,10 +1,71 @@
-# 노드 사양 산정 근거 (v4.0.0)
+# 노드 사양 산정 근거 (v4.2.0)
 
 - 작성일: 2026-03-02
-- 최종수정일: 2026-03-07
+- 최종수정일: 2026-03-11
 - 작성자: infra (claude-code)
 - 상태: draft
-- 관련문서: [design-step5.md](./design-step5.md) 섹션 4(노드 사이징), 섹션 3(워크로드 분석과 리소스 산정), 섹션 10(DB HA), [cost-comparison.md](./cost-comparison.md)
+- 관련문서: [design-step5.md](../design-step5.md) 섹션 4(노드 사이징), 섹션 3(워크로드 분석과 리소스 산정), 섹션 10(DB HA), [cost-comparison.md](./cost-comparison.md)
+
+---
+
+## 요약: 결정 사항
+
+### 노드 구성
+
+**t4g.large × 6 (2-2-2, 3-AZ 균등 배치)** — 월 $294
+
+| 항목 | 노드당 | 6대 합계 |
+|------|--------|---------|
+| 총 vCPU / Allocatable | 2.0v / 1.5v | 12.0v / **9.0v** |
+| 총 RAM / Allocatable | 8.0GB / 6.5GB | 48.0GB / **39.0GB** |
+
+- **N-1 내결함**: 1대 장애 시 5대(7.5v) → 필요 2.89v의 39% → 매우 여유
+- **AZ 장애**(2대 손실): 4대(6.0v) → 필요 2.89v의 48% → 여유롭게 수용
+- **HPA 풀스케일**(~3840m): 6대(9.0v)의 43% → 충분한 여유
+- **장애 blast radius**: 1/6 = 17% (xlarge×3의 33% 대비 절반)
+- **초기 배포**: `workers_per_az = 1` (3대)로 시작 → 안정화 후 6대로 스케일업
+
+### K8S 워크로드 (Stateless App 전용)
+
+> DB(MySQL, MongoDB, Redis, RabbitMQ, ChromaDB)는 K8S 외부 EC2에서 영구 운영. [design-step5.md](../design-step5.md) §11 참조.
+
+| 서비스 | CPU Req | CPU Lim | RAM Req | RAM Lim |
+|--------|---------|---------|---------|---------|
+| FE (×2) | 250m | 1500m | 512MB | 1GB |
+| **BE (×2)** | **700m** | **2000m** | **1.5GB** | **2GB** |
+| AI Server (×1) | 300m | 1000m | 768MB | 1.5GB |
+
+> **굵은 글씨**: 부하테스트(k6 S02/S03/S05) 결과 반영하여 상향 조정된 항목
+
+### 워크로드 합산
+
+| 카테고리 | CPU Request | RAM Request |
+|----------|-------------|-------------|
+| App (FE×2, BE×2, AI×1) | 2200m | 4.75GB |
+| 공유 컴포넌트 (ArgoCD, Alloy, kube-state-metrics, Gateway Fabric) | ~690m | ~1.1GB |
+| **Prod 합계** | **~2890m** | **~5.85GB** |
+
+→ Allocatable 9.0v 대비 활용률 32%. HPA 풀스케일(~3840m) 시에도 43%.
+
+### 스케일업 트리거
+
+| 조건 | 대응 |
+|------|------|
+| CPU 일상 85%+ | 워커 7대 추가 (3-3-1) |
+| Baseline 30% 초과 빈번 | m7g.large로 교체 (비-burstable) |
+| 전체 과부하 | t4g.xlarge × 3 전환 (동일 비용, 3대 단순화) |
+
+### 핵심 리스크
+
+| 리스크 | 완화 |
+|--------|------|
+| BE CPU Limit(2000m) > 노드 alloc(1500m) → throttle 가능 | 실측 피크 908m은 k6 편중. 대부분 Request(700m) 이하 |
+| t4g Baseline 30% 초과 → 크레딧 소진 | Unlimited 모드 + CPUCreditBalance 알림 |
+| 비용 $196→$294 (+50%) | 부하테스트 기반 불가피. 운영 안정 후 축소 검토 |
+
+---
+
+> 이하 섹션은 위 결정의 **산정 근거 데이터**. DB 워크로드(MySQL, MongoDB, Redis 등)의 실측·산정 데이터도 포함되어 있으나, 이는 EC2 사이징 참고용이며 K8S 워크로드 합산에는 포함되지 않는다.
 
 ---
 
@@ -154,18 +215,19 @@
 
 > Worker **6대** 기준 (3-AZ, 2-2-2). 6대 합계: 3000m / 9.0GB.
 
-### 2.3 공유 컴포넌트 (잠정)
+### 2.3 공유 컴포넌트
+
+> 하이브리드 모니터링 결정에 따라 Prometheus/Grafana는 외부 EC2에서 운영. K8S에는 수집기(Alloy, kube-state-metrics)만 배치.
 
 | 컴포넌트 | CPU | RAM | 비고 | 상태 |
 |---------|-----|-----|------|------|
 | NGINX Gateway Fabric | 100m | 256MB | Gateway API 컨트롤러 | 확정 |
 | ArgoCD | 300m | 512MB | server + repo-server + controller | 잠정 |
-| Prometheus + Alertmanager | 200m | 512MB | kube-prometheus-stack | 잠정 |
-| Grafana | 100m | 256MB | 대시보드 | 잠정 |
+| kube-state-metrics | 50m | 64MB | K8S 오브젝트 상태 메트릭 | 잠정 |
 | Alloy (DaemonSet ×6) | 240m | 288MB | 노드당 ~40m/48MB | 잠정 |
-| **합계** | **~940m** | **~1.7GB** | | |
+| **합계** | **~690m** | **~1.1GB** | | |
 
-> Gateway Fabric만 확정(섹션 12). CD·모니터링·로그 수집은 설계 전이며, 스택 확정 후 수치 재산정 예정.
+> Gateway Fabric만 확정. CD·모니터링 수집기는 설계 확정 후 수치 재산정 예정. Prometheus/Grafana는 외부 EC2 유지([monitoring-plan.md](./monitoring-plan.md) §1 참조).
 
 ---
 
@@ -381,3 +443,5 @@ Limit   = Request × 2~3 (burst 수용)
 | v3.1.0 | 2026-03-04 | N-1 제거, HPA 스케일아웃 시나리오 추가(FE/BE +1), 비교표·리스크 HPA 기준으로 갱신. |
 | v3.1.1 | 2026-03-04 | 공유 컴포넌트: Promtail→Alloy, 잠정 표기 추가. |
 | **v4.0.0** | **2026-03-07** | **부하테스트 반영**: k6 부하테스트(S02/S03/S05) 피크 데이터 추가(§1.4), BE/MySQL Request/Limit 상향(BE 500→700m, MySQL 200→500m), 3-AZ 전환(t4g.large×4→×6, 2-2-2), 워크로드 합산 재계산. |
+| v4.1.0 | 2026-03-11 | 문서 구조 개선: 결정 사항 요약 섹션을 문서 앞단에 배치. DB EC2 이관 결정 반영(K8S 워크로드에서 DB 제외). |
+| **v4.2.0** | **2026-03-11** | 하이브리드 모니터링 반영: §2.3 공유 컴포넌트에서 Prometheus/Grafana 제거, kube-state-metrics 추가(~940m→~690m). 요약 수치 연동(Prod ~2890m, HA 32%, N-1 39%). |
