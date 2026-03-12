@@ -38,7 +38,7 @@ env:
   ECR_REGISTRY: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com
   SERVICE_NAME: be
   CLOUD_REPO: 100-hours-a-week/14-team-dojangkok-cloud
-  CLOUD_BRANCH: feat/v3-k8s-iac  # 추후 main으로 변경
+  CLOUD_BRANCH: main
 
 jobs:
   # ──────────────────────────────────────────────
@@ -154,17 +154,23 @@ jobs:
 
       - name: Update Kustomize image tag
         run: |
-          OVERLAY_DIR="k8s/apps/overlays/${{ inputs.environment }}"
-          IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ needs.build-and-push.outputs.image-name }}"
+          ENV="${{ inputs.environment }}"
+          OVERLAY_DIR="k8s/apps/overlays/${ENV}"
+          BASE_IMAGE="${{ env.ECR_REGISTRY }}/dev-dojangkok-${{ env.SERVICE_NAME }}"
           IMAGE_TAG="${{ needs.build-and-push.outputs.image-tag }}"
 
-          # dev overlay: newTag만 변경
-          # prod overlay: newName도 있지만 kustomize edit이 자동 처리
           cd "${OVERLAY_DIR}"
-          kustomize edit set image \
-            ${{ env.ECR_REGISTRY }}/dev-dojangkok-${{ env.SERVICE_NAME }}=${IMAGE_NAME}:${IMAGE_TAG}
 
-          echo "Updated image: ${IMAGE_NAME}:${IMAGE_TAG}"
+          if [ "${ENV}" = "prod" ]; then
+            # prod: newName(dev→prod) + newTag 변경
+            PROD_IMAGE="${{ env.ECR_REGISTRY }}/prod-dojangkok-${{ env.SERVICE_NAME }}"
+            kustomize edit set image "${BASE_IMAGE}=${PROD_IMAGE}:${IMAGE_TAG}"
+          else
+            # dev: newTag만 변경
+            kustomize edit set image "${BASE_IMAGE}:${IMAGE_TAG}"
+          fi
+
+          echo "Updated: ${ENV} → ${IMAGE_TAG}"
           cat kustomization.yaml
 
       - name: Commit and Push
@@ -174,4 +180,5 @@ jobs:
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "deploy(${{ inputs.environment }}): backend ${{ needs.build-and-push.outputs.image-tag }}"
+          git pull --rebase origin ${{ env.CLOUD_BRANCH }}
           git push
