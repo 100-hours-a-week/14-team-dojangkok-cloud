@@ -1,0 +1,166 @@
+# Frontend CI/CD Pipeline (V3 K8S - ArgoCD GitOps)
+# 위치: .github/workflows/fe-v3-cicd.yml (서비스 레포에 복사)
+#
+# 트리거: workflow_dispatch (수동) — K8S 클러스터 비상시 운용
+# 빌드: Node 22 + npm → Docker (arm64) → ECR
+# 배포: Kustomize 이미지 태그 업데이트 → cloud repo push → ArgoCD auto-sync
+#
+# GitHub Secrets 필요:
+#   AWS_ROLE_ARN      — ECR push용 OIDC IAM Role
+#   AWS_REGION        — ap-northeast-2
+#   S3_BUCKET_NAME    — .env 파일 저장 버킷
+#   CLOUD_REPO_PAT    — cloud repo push용 Personal Access Token
+#
+# GitHub Environments: 3-v3-dev, 3-v3-prod
+
+name: Frontend CI/CD (V3 K8S)
+
+concurrency:
+  group: fe-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '배포 환경'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  ECR_REGISTRY: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com
+  SERVICE_NAME: fe
+  CLOUD_REPO: 100-hours-a-week/14-team-dojangkok-cloud
+  CLOUD_BRANCH: feat/v3-k8s-iac
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 1. 테스트
+  # ──────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check Formatting
+        run: npx prettier --check .
+
+      - name: Run Lint
+        run: npm run lint
+
+      - name: Run Tests
+        run: npm test -- --passWithNoTests
+
+  # ──────────────────────────────────────────────
+  # 2. Docker 빌드 + ECR Push
+  # ──────────────────────────────────────────────
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: 3-v3-${{ inputs.environment }}
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+      image-name: ${{ steps.meta.outputs.name }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          TAG="${{ github.sha }}"
+          NAME="${{ inputs.environment }}-dojangkok-${{ env.SERVICE_NAME }}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # NEXT_PUBLIC_* 환경변수는 빌드타임에 주입 필요
+      - name: Download .env from S3
+        run: |
+          aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/frontend/v3/${{ inputs.environment }}/.env .env
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64
+          provenance: false
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ steps.meta.outputs.name }}:${{ steps.meta.outputs.tag }}
+            ${{ env.ECR_REGISTRY }}/${{ steps.meta.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────
+  # 3. Kustomize 태그 업데이트 → ArgoCD Sync
+  # ──────────────────────────────────────────────
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Cloud Repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.CLOUD_REPO }}
+          ref: ${{ env.CLOUD_BRANCH }}
+          token: ${{ secrets.CLOUD_REPO_PAT }}
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Update Kustomize image tag
+        run: |
+          OVERLAY_DIR="k8s/apps/overlays/${{ inputs.environment }}"
+          IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ needs.build-and-push.outputs.image-name }}"
+          IMAGE_TAG="${{ needs.build-and-push.outputs.image-tag }}"
+
+          cd "${OVERLAY_DIR}"
+          kustomize edit set image \
+            ${{ env.ECR_REGISTRY }}/dev-dojangkok-${{ env.SERVICE_NAME }}=${IMAGE_NAME}:${IMAGE_TAG}
+
+          echo "Updated image: ${IMAGE_NAME}:${IMAGE_TAG}"
+          cat kustomization.yaml
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "deploy(${{ inputs.environment }}): frontend ${{ needs.build-and-push.outputs.image-tag }}"
+          git push
