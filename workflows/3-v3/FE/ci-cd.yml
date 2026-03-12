@@ -39,7 +39,7 @@ env:
   ECR_REGISTRY: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com
   SERVICE_NAME: fe
   CLOUD_REPO: 100-hours-a-week/14-team-dojangkok-cloud
-  CLOUD_BRANCH: feat/v3-k8s-iac
+  CLOUD_BRANCH: main
 
 jobs:
   # ──────────────────────────────────────────────
@@ -145,15 +145,21 @@ jobs:
 
       - name: Update Kustomize image tag
         run: |
-          OVERLAY_DIR="k8s/apps/overlays/${{ inputs.environment }}"
-          IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ needs.build-and-push.outputs.image-name }}"
+          ENV="${{ inputs.environment }}"
+          OVERLAY_DIR="k8s/apps/overlays/${ENV}"
+          BASE_IMAGE="${{ env.ECR_REGISTRY }}/dev-dojangkok-${{ env.SERVICE_NAME }}"
           IMAGE_TAG="${{ needs.build-and-push.outputs.image-tag }}"
 
           cd "${OVERLAY_DIR}"
-          kustomize edit set image \
-            ${{ env.ECR_REGISTRY }}/dev-dojangkok-${{ env.SERVICE_NAME }}=${IMAGE_NAME}:${IMAGE_TAG}
 
-          echo "Updated image: ${IMAGE_NAME}:${IMAGE_TAG}"
+          if [ "${ENV}" = "prod" ]; then
+            PROD_IMAGE="${{ env.ECR_REGISTRY }}/prod-dojangkok-${{ env.SERVICE_NAME }}"
+            kustomize edit set image "${BASE_IMAGE}=${PROD_IMAGE}:${IMAGE_TAG}"
+          else
+            kustomize edit set image "${BASE_IMAGE}:${IMAGE_TAG}"
+          fi
+
+          echo "Updated: ${ENV} → ${IMAGE_TAG}"
           cat kustomization.yaml
 
       - name: Commit and Push
@@ -163,4 +169,5 @@ jobs:
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "deploy(${{ inputs.environment }}): frontend ${{ needs.build-and-push.outputs.image-tag }}"
+          git pull --rebase origin ${{ env.CLOUD_BRANCH }}
           git push
