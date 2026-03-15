@@ -1,6 +1,6 @@
 # ============================================================
 # V3 K8S Ansible — ArgoCD 설치
-# Branch: feat/v3-k8s-iac
+# Branch: main
 # values.yaml: k8s/infra/argocd/values.yaml 과 동일한 설정
 # ============================================================
 
@@ -54,7 +54,7 @@
       project: default
       source:
         repoURL: https://github.com/100-hours-a-week/14-team-dojangkok-cloud.git
-        targetRevision: feat/v3-k8s-iac
+        targetRevision: main
         path: k8s/apps/overlays/dev
       destination:
         server: https://kubernetes.default.svc
