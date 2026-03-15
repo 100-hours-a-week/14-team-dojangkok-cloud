@@ -15,9 +15,9 @@ locals {
   # K8S 서브넷 (기존 VPC 여유 공간 활용)
   k8s_subnets = {
     "public-2b" = { cidr = "10.0.1.0/24", az = "b", tier = "public" }
-    "k8s-2a"    = { cidr = "10.0.32.0/22", az = "a", tier = "private" }
-    "k8s-2b"    = { cidr = "10.0.36.0/22", az = "b", tier = "private" }
-    "k8s-2c"    = { cidr = "10.0.40.0/22", az = "c", tier = "private" }
+    "k8s-2a"    = { cidr = "10.0.48.0/24", az = "a", tier = "private" }
+    "k8s-2b"    = { cidr = "10.0.49.0/24", az = "b", tier = "private" }
+    "k8s-2c"    = { cidr = "10.0.50.0/24", az = "c", tier = "private" }
   }
 
   availability_zones = ["a", "b", "c"]
