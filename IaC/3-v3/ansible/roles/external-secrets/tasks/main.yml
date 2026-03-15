@@ -47,16 +47,17 @@
     --timeout=60s
   changed_when: false
 
-- name: Detect ESO API version
+- name: Get ClusterSecretStore served API version from CRD
   shell: |
-    kubectl --kubeconfig=/home/ubuntu/.kube/config api-versions | grep '^external-secrets.io/v' | sort -rV | head -1
-  register: eso_api_version
+    kubectl --kubeconfig=/home/ubuntu/.kube/config get crd clustersecretstores.external-secrets.io \
+      -o jsonpath='{.spec.versions[?(@.served==true)].name}' | tr ' ' '\n' | sort -rV | head -1
+  register: css_api_version
   changed_when: false
 
 - name: Apply ClusterSecretStore
   shell: |
     cat <<'EOF' | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
-    apiVersion: {{ eso_api_version.stdout | default('external-secrets.io/v1beta1') }}
+    apiVersion: external-secrets.io/{{ css_api_version.stdout }}
     kind: ClusterSecretStore
     metadata:
       name: aws-secrets-manager
@@ -67,4 +68,4 @@
           region: ap-northeast-2
     EOF
   register: css_apply
-  changed_when: "'configured' in css_apply.stdout or 'created' in css_apply.stdout"
+  changed_when: false
