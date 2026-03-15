@@ -2,16 +2,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../base
+- ../../base
 
 # base가 이미 dev 기본값이므로 최소한의 오버라이드만 정의.
 # CI에서 image tag를 업데이트할 때 이 섹션을 수정한다.
 images:
-  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
-    newTag: latest
-  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
-    newTag: latest
-  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
-    newTag: latest
-  - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
-    newTag: latest
+- name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
+  newTag: latest
+- name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
+  newTag: 729e7e61b450f000727e3703e17bb590faa2a2af
+- name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
+  newTag: latest
+- name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
+  newTag: latest
