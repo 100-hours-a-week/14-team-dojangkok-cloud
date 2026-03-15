@@ -39,10 +39,26 @@
     -n external-secrets --timeout=120s
   changed_when: false
 
+- name: Wait for ESO CRDs to be established
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    wait --for=condition=Established
+    crd/clustersecretstores.external-secrets.io
+    --timeout=60s
+  changed_when: false
+
+- name: Detect ESO API version
+  shell: |
+    kubectl --kubeconfig=/home/ubuntu/.kube/config api-resources --api-group=external-secrets.io -o name 2>/dev/null | head -1
+    kubectl --kubeconfig=/home/ubuntu/.kube/config api-versions | grep external-secrets.io | sort -r | head -1
+  register: eso_api_version
+  changed_when: false
+
 - name: Apply ClusterSecretStore
   shell: |
-    cat <<'EOF' | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
-    apiVersion: external-secrets.io/v1beta1
+    ESO_VERSION="{{ eso_api_version.stdout_lines[-1] | default('external-secrets.io/v1beta1') }}"
+    cat <<EOF | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
+    apiVersion: ${ESO_VERSION}
     kind: ClusterSecretStore
     metadata:
       name: aws-secrets-manager
