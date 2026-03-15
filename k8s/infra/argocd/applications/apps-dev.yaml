@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/100-hours-a-week/14-team-dojangkok-cloud.git
-    targetRevision: feat/v3-k8s-iac
+    targetRevision: main
     path: k8s/apps/overlays/dev
   destination:
     server: https://kubernetes.default.svc

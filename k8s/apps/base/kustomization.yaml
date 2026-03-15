@@ -6,5 +6,5 @@ resources:
   - backend
   - frontend
   - ai-server
-  - chatting-be
+  # - chatting-be  # 레포 준비 후 활성화
   - networking

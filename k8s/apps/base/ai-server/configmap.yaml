@@ -7,8 +7,8 @@ metadata:
     app.kubernetes.io/name: ai-server
 data:
   # --- App ---
-  APP_ENV: "prod"
-  HTTP_TIMEOUT_SEC: "30"
+  APP_ENV: "dev"
+  HTTP_TIMEOUT_SEC: "180"
   CHROMADB_URL: ""
 
   # --- vLLM ---
@@ -24,17 +24,17 @@ data:
 
   # --- RabbitMQ 라우팅 ---
   RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT: "fast.exchange"
-  RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT: "easy-contract.request"
-  RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT: "easy-contract.request"
+  RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT: "quorum.easy-contract.request"
+  RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT: "quorum.easy-contract.request"
   RABBITMQ_REQUEST_EXCHANGE_CHECKLIST: "fast.exchange"
-  RABBITMQ_REQUEST_QUEUE_CHECKLIST: "checklist.request"
-  RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST: "checklist.request"
+  RABBITMQ_REQUEST_QUEUE_CHECKLIST: "quorum.checklist.request"
+  RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST: "quorum.checklist.request"
   RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT: "fast.exchange"
-  RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT: "cancel.request"
-  RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT: "cancel.request"
+  RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT: "quorum.cancel.request"
+  RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT: "quorum.cancel.request"
   RABBITMQ_RESULT_EXCHANGE: "fast.exchange"
-  RABBITMQ_RESULT_QUEUE: "ai.response"
-  RABBITMQ_RESULT_ROUTING_KEY: "ai.response"
+  RABBITMQ_RESULT_QUEUE: "quorum.ai.response"
+  RABBITMQ_RESULT_ROUTING_KEY: "quorum.ai.response"
 
   # --- 재시도 ---
   WORKER_RETRY_MAX_ATTEMPTS: "3"
