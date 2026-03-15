@@ -190,67 +190,6 @@ variable "ai_http_timeout_sec" {
   default = "180"
 }
 
-# RabbitMQ (same as GCP defaults)
-variable "rabbitmq_request_exchange_easy_contract" {
-  type    = string
-  default = "fast.exchange"
-}
-
-variable "rabbitmq_request_queue_easy_contract" {
-  type    = string
-  default = "easy-contract.request"
-}
-
-variable "rabbitmq_request_routing_key_easy_contract" {
-  type    = string
-  default = "easy-contract.request"
-}
-
-variable "rabbitmq_request_exchange_checklist" {
-  type    = string
-  default = "fast.exchange"
-}
-
-variable "rabbitmq_request_queue_checklist" {
-  type    = string
-  default = "checklist.request"
-}
-
-variable "rabbitmq_request_routing_key_checklist" {
-  type    = string
-  default = "checklist.request"
-}
-
-variable "rabbitmq_cancel_exchange_easy_contract" {
-  type    = string
-  default = "fast.exchange"
-}
-
-variable "rabbitmq_cancel_queue_easy_contract" {
-  type    = string
-  default = "cancel.request"
-}
-
-variable "rabbitmq_cancel_routing_key_easy_contract" {
-  type    = string
-  default = "cancel.request"
-}
-
-variable "rabbitmq_result_exchange" {
-  type    = string
-  default = "fast.exchange"
-}
-
-variable "rabbitmq_result_queue" {
-  type    = string
-  default = "ai.response"
-}
-
-variable "rabbitmq_result_routing_key" {
-  type    = string
-  default = "ai.response"
-}
-
 # Monitoring
 variable "loki_url" {
   type    = string

@@ -156,8 +156,9 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --timeout-seconds 300 \
             --parameters "commands=[
+              \"aws s3 cp s3://${{ secrets.S3_CONFIG_BUCKET }}/ai/dev/docker-compose.yml /opt/app/docker-compose.yml --region ${{ secrets.AWS_REGION }}\",
               \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"cd /opt/app && docker compose pull && docker compose up -d\"
+              \"cd /opt/app && docker compose pull && docker compose down && docker compose up -d\"
             ]" \
             --query "Command.CommandId" \
             --output text)

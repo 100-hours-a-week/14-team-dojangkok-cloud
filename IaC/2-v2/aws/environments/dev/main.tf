@@ -174,42 +174,8 @@ module "compute" {
       user_data = templatefile("${path.module}/scripts/startup-ai-server.sh", {
         region       = var.region
         environment  = var.environment
-        project_name = var.project_name
         ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com"
-        compose_content = templatefile("../../gcp/docker-compose/ai-server.yml", {
-          AI_SERVER_IMAGE                = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/dev-dojangkok-ai:latest"
-          APP_ENV                        = var.environment
-          VLLM_BASE_URL                  = var.ai_vllm_base_url
-          VLLM_MODEL                     = var.ai_vllm_model
-          VLLM_LORA_ADAPTER_CHECKLIST    = var.ai_vllm_lora_adapter_checklist
-          VLLM_LORA_ADAPTER_EASYCONTRACT = var.ai_vllm_lora_adapter_easycontract
-          CHROMADB_URL                   = ""
-          BACKEND_CALLBACK_BASE_URL      = var.ai_backend_callback_base_url
-          HTTP_TIMEOUT_SEC               = var.ai_http_timeout_sec
-          RABBITMQ_ENABLED                           = "true"
-          RABBITMQ_PREFETCH_COUNT                    = "3"
-          RABBITMQ_DECLARE_PASSIVE                   = "true"
-          RABBITMQ_REQUEST_EXCHANGE_EASY_CONTRACT    = var.rabbitmq_request_exchange_easy_contract
-          RABBITMQ_REQUEST_QUEUE_EASY_CONTRACT       = var.rabbitmq_request_queue_easy_contract
-          RABBITMQ_REQUEST_ROUTING_KEY_EASY_CONTRACT = var.rabbitmq_request_routing_key_easy_contract
-          RABBITMQ_REQUEST_EXCHANGE_CHECKLIST        = var.rabbitmq_request_exchange_checklist
-          RABBITMQ_REQUEST_QUEUE_CHECKLIST           = var.rabbitmq_request_queue_checklist
-          RABBITMQ_REQUEST_ROUTING_KEY_CHECKLIST     = var.rabbitmq_request_routing_key_checklist
-          RABBITMQ_CANCEL_EXCHANGE_EASY_CONTRACT     = var.rabbitmq_cancel_exchange_easy_contract
-          RABBITMQ_CANCEL_QUEUE_EASY_CONTRACT        = var.rabbitmq_cancel_queue_easy_contract
-          RABBITMQ_CANCEL_ROUTING_KEY_EASY_CONTRACT  = var.rabbitmq_cancel_routing_key_easy_contract
-          RABBITMQ_RESULT_EXCHANGE                   = var.rabbitmq_result_exchange
-          RABBITMQ_RESULT_QUEUE                      = var.rabbitmq_result_queue
-          RABBITMQ_RESULT_ROUTING_KEY                = var.rabbitmq_result_routing_key
-        })
-        alloy_config = templatefile("../../gcp/docker-compose/alloy/config.alloy", {
-          hostname             = "${var.project_name}-ai"
-          service_name         = "ai-server"
-          loki_url             = var.loki_url
-          tempo_endpoint       = var.tempo_endpoint
-          prometheus_url       = var.prometheus_url
-          enable_dcgm_exporter = false
-        })
+        s3_bucket    = var.alloy_config_s3_bucket
       })
     }
   }
