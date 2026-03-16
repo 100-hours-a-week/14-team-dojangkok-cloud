@@ -35,6 +35,7 @@
     KUBECONFIG: /home/ubuntu/.kube/config
   roles:
     - calico
+    - coredns-config
     - ebs-csi
     - gateway-fabric
     - external-secrets

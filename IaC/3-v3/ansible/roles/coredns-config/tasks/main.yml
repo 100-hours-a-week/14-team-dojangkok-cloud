@@ -1,0 +1,27 @@
+# ============================================================
+# V3 K8S Ansible — CoreDNS forward 설정
+# kubeadm + Ubuntu systemd-resolved 환경에서
+# CoreDNS가 /etc/resolv.conf(127.0.0.53)를 상속받아
+# 외부 DNS 해석 불가 → VPC DNS Resolver로 직접 forward
+# ============================================================
+
+- name: Patch CoreDNS ConfigMap — forward to VPC DNS Resolver
+  shell: |
+    kubectl --kubeconfig=/home/ubuntu/.kube/config get configmap coredns -n kube-system -o json \
+      | jq '.data.Corefile = (.data.Corefile | gsub("forward \\. /etc/resolv\\.conf"; "forward . 10.0.0.2"))' \
+      | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
+  register: coredns_patch
+  changed_when: "'configured' in coredns_patch.stdout"
+
+- name: Restart CoreDNS to pick up config change
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout restart deployment/coredns -n kube-system
+  changed_when: true
+
+- name: Wait for CoreDNS rollout
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/coredns
+    -n kube-system --timeout=60s
+  changed_when: false
