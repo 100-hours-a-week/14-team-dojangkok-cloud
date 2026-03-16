@@ -39,6 +39,20 @@
     -n external-secrets --timeout=120s
   changed_when: false
 
+- name: Wait for ESO webhook to be ready
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/external-secrets-webhook
+    -n external-secrets --timeout=120s
+  changed_when: false
+
+- name: Wait for ESO cert-controller to be ready
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/external-secrets-cert-controller
+    -n external-secrets --timeout=120s
+  changed_when: false
+
 - name: Wait for ESO CRDs to be established
   command: >
     kubectl --kubeconfig=/home/ubuntu/.kube/config
