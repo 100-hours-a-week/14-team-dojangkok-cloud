@@ -17,6 +17,8 @@ spec:
         app.kubernetes.io/name: ai-server
         app.kubernetes.io/component: ai
     spec:
+      serviceAccountName: ai-sa
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: ai-server

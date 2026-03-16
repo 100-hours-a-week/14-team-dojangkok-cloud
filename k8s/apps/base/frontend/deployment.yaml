@@ -17,6 +17,8 @@ spec:
         app.kubernetes.io/name: frontend
         app.kubernetes.io/component: web
     spec:
+      serviceAccountName: fe-sa
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
