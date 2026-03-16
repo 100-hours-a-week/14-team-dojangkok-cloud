@@ -158,10 +158,8 @@ module "nat_instance" {
   vpc_cidr     = var.vpc_cidr
   common_tags  = local.common_tags
 
-  public_subnet_ids = concat(
-    [data.aws_subnet.existing_public_2a.id, data.aws_subnet.existing_public_2c.id],
-    [module.k8s_networking.subnet_ids["public-2b"]]
-  )
+  # NOTE: 2b 일시 제외 — t4g.nano capacity 부족 (2026-03-17)
+  public_subnet_ids = [data.aws_subnet.existing_public_2a.id, data.aws_subnet.existing_public_2c.id]
 
   route_table_ids = [
     module.k8s_networking.private_route_table_ids["a"],
