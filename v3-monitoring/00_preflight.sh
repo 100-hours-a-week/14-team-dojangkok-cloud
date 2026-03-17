@@ -2,7 +2,10 @@
 set -euo pipefail
 
 # =============================================================================
-# 00_preflight.sh - Pre-flight checks for V3 monitoring server setup
+# 00_preflight.sh - Pre-flight checks for V3 monitoring setup
+# =============================================================================
+# EC2 인스턴스는 수동 생성 후 .env에 기입.
+# 이 스크립트는 .env 값, AWS 자격증명, SSM 연결을 검증한다.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,9 +32,11 @@ pass ".env loaded"
 # --- 2. Required variables ---
 header "2. Validating required environment variables"
 REQUIRED_VARS=(
-    AWS_PROFILE AWS_REGION VPC_ID SUBNET_ID INSTANCE_TYPE AMI_ID
-    NAME_PREFIX ENV_NAME S3_MONITORING_BUCKET S3_CONFIG_BUCKET S3_CONFIG_PREFIX
-    ADMIN_IP VPC_CIDR GRAFANA_ADMIN_PASSWORD
+    AWS_PROFILE AWS_REGION VPC_ID
+    NAME_PREFIX ENV_NAME S3_MONITORING_BUCKET MONITOR_IAM_ROLE
+    S3_CONFIG_BUCKET S3_CONFIG_PREFIX
+    GRAFANA_ADMIN_PASSWORD
+    MONITOR_INSTANCE_ID MONITOR_PUBLIC_IP MONITOR_PRIVATE_IP
     TARGET_MYSQL_INSTANCE_ID TARGET_REDIS_INSTANCE_ID TARGET_MQ_INSTANCE_ID
     BE_LAUNCH_TEMPLATE_ID FE_LAUNCH_TEMPLATE_ID
 )
@@ -56,51 +61,50 @@ else
     fail "AWS authentication failed"
 fi
 
-# --- 4. VPC ---
-header "4. Checking VPC"
-if VPC_OUT=$(aws ec2 describe-vpcs --vpc-ids "${VPC_ID}" ${AWS_OPTS} --output json 2>&1); then
-    VPC_CIDR_ACTUAL=$(echo "$VPC_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Vpcs'][0]['CidrBlock'])" 2>/dev/null || echo "unknown")
-    pass "VPC ${VPC_ID}  CIDR=${VPC_CIDR_ACTUAL}"
+# --- 4. Monitor instance ---
+header "4. Checking Monitor instance"
+if INST_OUT=$(aws ec2 describe-instances --instance-ids "${MONITOR_INSTANCE_ID}" ${AWS_OPTS} --output json 2>&1); then
+    INST_STATE=$(echo "$INST_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Reservations'][0]['Instances'][0]['State']['Name'])" 2>/dev/null || echo "unknown")
+    INST_TYPE=$(echo "$INST_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Reservations'][0]['Instances'][0]['InstanceType'])" 2>/dev/null || echo "unknown")
+    if [[ "$INST_STATE" == "running" ]]; then
+        pass "Instance ${MONITOR_INSTANCE_ID}  Type=${INST_TYPE}  State=${INST_STATE}"
+    else
+        fail "Instance ${MONITOR_INSTANCE_ID} is ${INST_STATE} (expected running)"
+    fi
 else
-    fail "VPC ${VPC_ID} not found"
+    fail "Instance ${MONITOR_INSTANCE_ID} not found"
 fi
 
-# --- 5. Subnet ---
-header "5. Checking Subnet"
-if SUBNET_OUT=$(aws ec2 describe-subnets --subnet-ids "${SUBNET_ID}" ${AWS_OPTS} --output json 2>&1); then
-    SUBNET_AZ=$(echo "$SUBNET_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Subnets'][0]['AvailabilityZone'])" 2>/dev/null || echo "unknown")
-    pass "Subnet ${SUBNET_ID}  AZ=${SUBNET_AZ}"
+# --- 5. SSM connectivity ---
+header "5. Checking SSM connectivity"
+SSM_STATUS=$(aws ssm describe-instance-information \
+  --filters "Key=InstanceIds,Values=${MONITOR_INSTANCE_ID}" \
+  ${AWS_OPTS} \
+  --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null) || SSM_STATUS="None"
+
+if [[ "$SSM_STATUS" == "Online" ]]; then
+    pass "SSM: Online"
 else
-    fail "Subnet ${SUBNET_ID} not found"
+    fail "SSM: ${SSM_STATUS} (expected Online, wait ~2 min after instance start)"
 fi
 
-# --- 6. AMI ---
-header "6. Checking AMI"
-if AMI_OUT=$(aws ec2 describe-images --image-ids "${AMI_ID}" ${AWS_OPTS} --output json 2>&1); then
-    AMI_ARCH=$(echo "$AMI_OUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['Images'][0].get('Architecture','unknown'))" 2>/dev/null || echo "unknown")
-    pass "AMI ${AMI_ID}  Arch=${AMI_ARCH}"
+# --- 6. IAM Role ---
+header "6. Checking IAM Role"
+if aws iam get-role --role-name "${MONITOR_IAM_ROLE}" ${AWS_OPTS%--region*} >/dev/null 2>&1; then
+    pass "IAM Role: ${MONITOR_IAM_ROLE}"
 else
-    fail "AMI ${AMI_ID} not found"
+    fail "IAM Role ${MONITOR_IAM_ROLE} not found"
 fi
 
-# --- 7. Terraform ---
-header "7. Checking Terraform"
-if command -v terraform &>/dev/null; then
-    TF_VERSION=$(terraform version -json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['terraform_version'])" 2>/dev/null || terraform version | head -1)
-    pass "Terraform: ${TF_VERSION}"
-else
-    fail "Terraform not installed"
-fi
-
-# --- 8. S3 Config Bucket ---
-header "8. Checking S3 Config Bucket"
+# --- 7. S3 Config Bucket ---
+header "7. Checking S3 Config Bucket"
 if aws s3api head-bucket --bucket "${S3_CONFIG_BUCKET}" ${AWS_OPTS} 2>/dev/null; then
-    pass "S3 config bucket ${S3_CONFIG_BUCKET} exists"
+    pass "S3 config bucket: ${S3_CONFIG_BUCKET}"
 else
-    info "S3 config bucket ${S3_CONFIG_BUCKET} does not exist"
+    fail "S3 config bucket ${S3_CONFIG_BUCKET} not found"
 fi
 
-# --- 9. Summary ---
+# --- 8. Summary ---
 header "========================================="
 header " Pre-flight Check Summary"
 header "========================================="
@@ -111,14 +115,17 @@ else
     echo -e "  ${RED}${BOLD}${ERRORS} check(s) failed.${NC} Fix the issues above before continuing."
 fi
 echo ""
+echo -e "  ${BOLD}Monitor Server:${NC}"
+echo -e "    Instance ID: ${MONITOR_INSTANCE_ID}"
+echo -e "    Public IP:   ${MONITOR_PUBLIC_IP}"
+echo -e "    Private IP:  ${MONITOR_PRIVATE_IP}"
+echo ""
 echo -e "  ${BOLD}Configuration:${NC}"
 echo -e "    Profile:       ${AWS_PROFILE}"
 echo -e "    Region:        ${AWS_REGION}"
-echo -e "    VPC:           ${VPC_ID}"
-echo -e "    Subnet:        ${SUBNET_ID}"
-echo -e "    Instance Type: ${INSTANCE_TYPE}"
 echo -e "    Name Prefix:   ${NAME_PREFIX}"
 echo -e "    Env Name:      ${ENV_NAME}"
 echo -e "    S3 Monitoring: ${S3_MONITORING_BUCKET}"
+echo -e "    IAM Role:      ${MONITOR_IAM_ROLE}"
 echo ""
 exit $ERRORS
