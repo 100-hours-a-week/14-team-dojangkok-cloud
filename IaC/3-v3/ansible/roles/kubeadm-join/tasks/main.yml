@@ -8,8 +8,20 @@
     path: /etc/kubernetes/kubelet.conf
   register: kubelet_conf
 
+- name: Generate join command on CP (fallback if fact missing)
+  delegate_to: "{{ groups['role_control_plane'][0] }}"
+  command: kubeadm token create --print-join-command --ttl=2h
+  register: fallback_join_command
+  changed_when: false
+  when:
+    - not kubelet_conf.stat.exists
+    - hostvars[groups['role_control_plane'][0]].kubeadm_join_command is not defined
+
 - name: Join cluster
-  command: "{{ hostvars[groups['role_control_plane'][0]].kubeadm_join_command }} --node-name={{ inventory_hostname }}"
+  command: >
+    {{ hostvars[groups['role_control_plane'][0]].kubeadm_join_command
+       | default(fallback_join_command.stdout) }}
+    --node-name={{ inventory_hostname }}
   when: not kubelet_conf.stat.exists
 
 - name: Label worker node (from CP)

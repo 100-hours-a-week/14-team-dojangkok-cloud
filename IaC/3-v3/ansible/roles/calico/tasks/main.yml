@@ -5,11 +5,10 @@
 
 - name: Install Tigera Operator
   command: >
-    kubectl --kubeconfig=/home/ubuntu/.kube/config create -f
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply --server-side -f
     https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
   register: tigera_result
-  failed_when: tigera_result.rc != 0 and 'already exists' not in tigera_result.stderr
-  changed_when: "'created' in tigera_result.stdout"
+  changed_when: "'configured' in tigera_result.stdout or 'created' in tigera_result.stdout"
 
 - name: Apply Calico custom resource
   copy:

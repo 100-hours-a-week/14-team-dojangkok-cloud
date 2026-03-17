@@ -33,6 +33,10 @@
     - kubelet
     - kubectl
 
+  # NOTE: /etc/default/kubelet은 ecr-credential-provider role에서
+  # resolv-conf + credential-provider 플래그를 병합하여 최종 설정.
+  # 여기서 중복 설정하면 role 실행 순서에 따라 덮어쓰기 발생.
+
 - name: Enable kubelet
   systemd:
     name: kubelet
