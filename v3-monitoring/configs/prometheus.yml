@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: ENV_NAME_PLACEHOLDER
+    replica: "a"
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+scrape_configs: []
