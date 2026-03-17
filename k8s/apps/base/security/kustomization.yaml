@@ -3,7 +3,5 @@ kind: Kustomization
 
 resources:
   - service-accounts.yaml
-  # NOTE: default-deny + network-policies 일시 비활성화
-  # 전체 서비스 정상 동작 확인 후 gateway egress 룰 보완하여 재적용
-  # - default-deny.yaml
-  # - network-policies.yaml
+  - default-deny.yaml
+  - network-policies.yaml

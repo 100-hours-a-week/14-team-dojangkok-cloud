@@ -84,6 +84,23 @@ spec:
       ports:
         - port: 8000
           protocol: TCP
+    # 외부 HTTPS (Kakao OAuth, AWS STS/S3)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    # EC2 IMDS (IAM 크레덴셜 — kubeadm 환경, IRSA 없음)
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
 ---
 # 5. AI Server → 외부 API (RunPod, OCR 등) + RabbitMQ (Egress)
 apiVersion: networking.k8s.io/v1
@@ -154,4 +171,24 @@ spec:
               app.kubernetes.io/name: ai-server
       ports:
         - port: 8080
+          protocol: TCP
+---
+# 8. Gateway 데이터 플레인 → Controller Egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-egress
+  namespace: dojangkok
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dojangkok-gateway-nginx
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-gateway
+      ports:
+        - port: 443
           protocol: TCP
