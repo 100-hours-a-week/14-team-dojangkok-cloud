@@ -14,7 +14,7 @@ CONFIGS_DIR="${SCRIPT_DIR}/configs"
 source "$SCRIPT_DIR/.env"
 
 if [[ -z "${MONITOR_INSTANCE_ID:-}" ]]; then
-  echo "ERROR: MONITOR_INSTANCE_ID not set. Run 01_create_monitor.sh first."
+  echo "ERROR: MONITOR_INSTANCE_ID not set. Fill in .env first."
   exit 1
 fi
 
@@ -69,28 +69,44 @@ ssm_upload_file() {
 }
 
 # --- 0. SSM check ---
-echo "[0/6] Verifying SSM connectivity ..."
+echo "[0/7] Verifying SSM connectivity ..."
 if ! ssm_run "echo 'SSM OK - $(hostname) - $(uname -m)'" 30; then
-  echo "ERROR: Cannot reach instance via SSM. Wait ~2 min after creation."
+  echo "ERROR: Cannot reach instance via SSM."
   exit 1
 fi
 echo ""
 
 # --- 1. Docker check ---
-echo "[1/6] Verifying Docker ..."
+echo "[1/7] Verifying Docker ..."
 if ! ssm_run "docker --version && docker compose version" 30; then
   echo "ERROR: Docker not found. Expected AMI with Docker pre-installed."
   exit 1
 fi
 echo ""
 
-# --- 2. Create remote dir ---
-echo "[2/6] Creating /opt/monitoring directory ..."
-ssm_run "mkdir -p /opt/monitoring && echo 'Directory created'" 30
+# --- 2. Stop existing stack + backup ---
+echo "[2/7] Checking for existing monitoring stack ..."
+
+STOP_CMD=$(cat <<'SCRIPT'
+if [ -f /opt/monitoring/docker-compose.yml ]; then
+  echo "Existing stack found. Backing up and stopping..."
+  BACKUP_DIR="/opt/monitoring-backup-$(date +%Y%m%d-%H%M%S)"
+  cp -r /opt/monitoring "$BACKUP_DIR"
+  echo "Backed up to $BACKUP_DIR"
+  cd /opt/monitoring && docker compose down || true
+  echo "Existing stack stopped."
+else
+  echo "No existing stack found. Fresh install."
+  mkdir -p /opt/monitoring
+fi
+SCRIPT
+)
+
+ssm_run "$STOP_CMD" 60
 echo ""
 
 # --- 3. Prepare and upload configs ---
-echo "[3/6] Preparing configs (substituting S3 bucket name + env name) ..."
+echo "[3/7] Preparing configs (substituting S3 bucket name + env name) ..."
 
 TMPDIR_CONFIGS=$(mktemp -d)
 trap "rm -rf '$TMPDIR_CONFIGS'" EXIT
@@ -113,7 +129,7 @@ echo "    S3_BUCKET_PLACEHOLDER -> ${S3_MONITORING_BUCKET}"
 echo "    ENV_NAME_PLACEHOLDER  -> ${ENV_NAME}"
 echo ""
 
-echo "[4/6] Uploading config files ..."
+echo "[4/7] Uploading config files ..."
 
 UPLOAD_ERRORS=0
 for cfg in docker-compose.yml prometheus.yml loki-config.yml tempo-config.yml \
@@ -135,8 +151,8 @@ fi
 echo "       All config files uploaded."
 echo ""
 
-# --- 4. Upload dashboards ---
-echo "[5/6] Uploading dashboards ..."
+# --- 5. Upload dashboards ---
+echo "[5/7] Uploading dashboards ..."
 ssm_run "mkdir -p /opt/monitoring/dashboards" 30
 
 DASHBOARD_DIR="${CONFIGS_DIR}/dashboards"
@@ -151,8 +167,8 @@ else
 fi
 echo ""
 
-# --- 5. Create .env + docker compose up ---
-echo "[6/6] Creating .env and starting stack ..."
+# --- 6. Create .env + docker compose up ---
+echo "[6/7] Creating .env and starting stack ..."
 
 ssm_run "cat > /opt/monitoring/.env << 'ENVEOF'
 GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
@@ -174,9 +190,9 @@ if ! ssm_run "$COMPOSE_CMD" 300; then
   exit 1
 fi
 
-# --- 6. Verify ---
+# --- 7. Verify ---
 echo ""
-echo "Verifying deployment (waiting 20 seconds) ..."
+echo "[7/7] Verifying deployment (waiting 20 seconds) ..."
 sleep 20
 
 VERIFY_CMD=$(cat <<'SCRIPT'
