@@ -46,10 +46,16 @@ spec:
         values: [frontend, backend, chatting-be, ai-server]
   policyTypes: [Ingress]
   ingress:
+    # nginx-gateway NS controller에서 직접 오는 트래픽
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: nginx-gateway
+    # gateway-nginx 데이터 플레인 Pod (dojangkok NS)에서 라우팅
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dojangkok-gateway-nginx
 ---
 # 4. BE → 외부 DB/Cache/MQ + AI Server (Egress)
 apiVersion: networking.k8s.io/v1
@@ -173,7 +179,7 @@ spec:
         - port: 8080
           protocol: TCP
 ---
-# 8. Gateway 데이터 플레인 → Controller Egress
+# 8. Gateway 데이터 플레인 Egress — Controller + App Pod 라우팅
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -185,10 +191,25 @@ spec:
       app.kubernetes.io/name: dojangkok-gateway-nginx
   policyTypes: [Egress]
   egress:
+    # Controller gRPC (nginx-gateway NS)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: nginx-gateway
       ports:
         - port: 443
+          protocol: TCP
+    # App Pod 라우팅 (dojangkok NS 내부)
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [frontend, backend, chatting-be, ai-server]
+      ports:
+        - port: 3000
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+        - port: 8000
           protocol: TCP
