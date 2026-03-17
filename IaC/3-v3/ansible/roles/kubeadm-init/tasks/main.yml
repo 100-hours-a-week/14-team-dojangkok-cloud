@@ -35,14 +35,16 @@
     group: ubuntu
     mode: "0644"
 
-- name: Generate join command
-  command: kubeadm token create --print-join-command
+- name: Generate join command (only when workers need to join)
+  command: kubeadm token create --print-join-command --ttl=2h
   register: join_command
   changed_when: false
+  when: groups.get('role_worker', []) | length > 0
 
 - name: Store join command as fact
   set_fact:
     kubeadm_join_command: "{{ join_command.stdout }}"
+  when: join_command is not skipped
 
 - name: Install Helm
   shell: |

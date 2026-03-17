@@ -35,12 +35,12 @@
           defaultCacheDuration: "12h"
           apiVersion: credentialprovider.kubelet.k8s.io/v1
 
-- name: Configure kubelet extra args for credential provider
+- name: Configure kubelet extra args (resolv-conf + credential provider)
   copy:
     dest: /etc/default/kubelet
     mode: "0644"
     content: |
-      KUBELET_EXTRA_ARGS=--image-credential-provider-config=/etc/kubernetes/ecr-credential-provider-config.yaml --image-credential-provider-bin-dir=/usr/local/bin
+      KUBELET_EXTRA_ARGS=--resolv-conf=/run/systemd/resolve/resolv.conf --image-credential-provider-config=/etc/kubernetes/ecr-credential-provider-config.yaml --image-credential-provider-bin-dir=/usr/local/bin
   notify: restart kubelet
 
 - name: Verify ecr-credential-provider binary
