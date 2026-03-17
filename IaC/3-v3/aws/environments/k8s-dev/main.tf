@@ -131,6 +131,121 @@ resource "aws_security_group_rule" "alb_to_worker_nodeport" {
 }
 
 # ============================================================
+# 2-1. 서비스 SG 브릿지 — Worker → 기존 V2 서비스 접근 허용
+# destroy 시 이 룰이 먼저 삭제되어 SG DependencyViolation 방지
+# ============================================================
+
+data "aws_security_group" "mysql_nlb" {
+  filter {
+    name   = "group-name"
+    values = ["dev-dojangkok-v2-mysql-cluster-nlb-sg"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+data "aws_security_group" "redis" {
+  filter {
+    name   = "group-name"
+    values = ["dev-dojangkok-v2-redis-sg"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+data "aws_security_group" "redis_sentinel" {
+  filter {
+    name   = "group-name"
+    values = ["dev-dojangkok-v2-redis-sentinel-sg"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+data "aws_security_group" "mongodb" {
+  filter {
+    name   = "group-name"
+    values = ["dev-dojangkok-v2-mongodb-sg"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+data "aws_security_group" "mq_nlb" {
+  filter {
+    name   = "group-name"
+    values = ["dev-dojangkok-v2-mq-cluster-nlb-sg"]
+  }
+  filter {
+    name   = "vpc-id"
+    values = [var.vpc_id]
+  }
+}
+
+# Worker → MySQL NLB (3306)
+resource "aws_security_group_rule" "mysql_nlb_from_worker" {
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = module.security_groups.security_group_ids["k8s-worker"]
+  security_group_id        = data.aws_security_group.mysql_nlb.id
+  description              = "K8S Worker to MySQL NLB"
+}
+
+# Worker → Redis Master (6379)
+resource "aws_security_group_rule" "redis_from_worker" {
+  type                     = "ingress"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  source_security_group_id = module.security_groups.security_group_ids["k8s-worker"]
+  security_group_id        = data.aws_security_group.redis.id
+  description              = "K8S Worker to Redis Master"
+}
+
+# Worker → Redis Sentinel (26379)
+resource "aws_security_group_rule" "redis_sentinel_from_worker" {
+  type                     = "ingress"
+  from_port                = 26379
+  to_port                  = 26379
+  protocol                 = "tcp"
+  source_security_group_id = module.security_groups.security_group_ids["k8s-worker"]
+  security_group_id        = data.aws_security_group.redis_sentinel.id
+  description              = "K8S Worker to Redis Sentinel"
+}
+
+# Worker → MongoDB (27017)
+resource "aws_security_group_rule" "mongodb_from_worker" {
+  type                     = "ingress"
+  from_port                = 27017
+  to_port                  = 27017
+  protocol                 = "tcp"
+  source_security_group_id = module.security_groups.security_group_ids["k8s-worker"]
+  security_group_id        = data.aws_security_group.mongodb.id
+  description              = "K8S Worker to MongoDB"
+}
+
+# Worker → RabbitMQ NLB (5672)
+resource "aws_security_group_rule" "mq_nlb_from_worker" {
+  type                     = "ingress"
+  from_port                = 5672
+  to_port                  = 5672
+  protocol                 = "tcp"
+  source_security_group_id = module.security_groups.security_group_ids["k8s-worker"]
+  security_group_id        = data.aws_security_group.mq_nlb.id
+  description              = "K8S Worker to RabbitMQ NLB"
+}
+
+# ============================================================
 # 3. IAM — K8S 노드 역할
 # ============================================================
 
