@@ -127,3 +127,28 @@ resource "aws_iam_role_policy" "ssm_s3" {
     }]
   })
 }
+
+# --- S3 for App image upload (presigned URL) ---
+
+resource "aws_iam_role_policy" "app_s3" {
+  name = "app-s3-upload"
+  role = aws_iam_role.k8s_node.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        "arn:aws:s3:::dev-ktb-team14-dojangkok-bucket",
+        "arn:aws:s3:::dev-ktb-team14-dojangkok-bucket/*"
+      ]
+    }]
+  })
+}
