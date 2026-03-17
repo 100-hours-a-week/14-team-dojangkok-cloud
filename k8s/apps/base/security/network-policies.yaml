@@ -1,24 +1,4 @@
-# 1. DNS 허용 — 모든 Pod → kube-dns (UDP/TCP 53)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns
-  namespace: dojangkok
-spec:
-  podSelector: {}
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
----
-# 2. kubelet Probe 허용 — Worker/CP 노드 → 모든 Pod
+# 1. kubelet Probe 허용 — Worker/CP 노드 → 모든 Pod
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -32,7 +12,7 @@ spec:
         - ipBlock:
             cidr: 10.0.48.0/20
 ---
-# 3. Gateway → FE/BE/AI 인바운드 허용
+# 2. Gateway → FE/BE/AI 인바운드 허용
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -57,102 +37,26 @@ spec:
             matchLabels:
               app.kubernetes.io/name: dojangkok-gateway-nginx
 ---
-# 4. BE → 외부 DB/Cache/MQ + AI Server (Egress)
+# 3. Gateway 데이터 플레인 Ingress — ALB/NodePort 트래픽 (externalTrafficPolicy: Local)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-backend-egress
+  name: allow-gateway-nodeport-ingress
   namespace: dojangkok
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: backend
-  policyTypes: [Egress]
-  egress:
-    - to:
+      app.kubernetes.io/name: dojangkok-gateway-nginx
+  policyTypes: [Ingress]
+  ingress:
+    - from:
         - ipBlock:
-            cidr: 10.0.0.0/16
-      ports:
-        - port: 3306
-          protocol: TCP
-        - port: 6379
-          protocol: TCP
-        - port: 26379
-          protocol: TCP
-        - port: 27017
-          protocol: TCP
-        - port: 5672
-          protocol: TCP
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: ai-server
-      ports:
-        - port: 8000
-          protocol: TCP
-    # 외부 HTTPS (Kakao OAuth, AWS STS/S3)
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 192.168.0.0/16
-      ports:
-        - port: 443
-          protocol: TCP
-    # EC2 IMDS (IAM 크레덴셜 — kubeadm 환경, IRSA 없음)
-    - to:
-        - ipBlock:
-            cidr: 169.254.169.254/32
+            cidr: 10.0.0.0/18
       ports:
         - port: 80
           protocol: TCP
 ---
-# 5. AI Server → 외부 API (RunPod, OCR 등) + RabbitMQ (Egress)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ai-server-egress
-  namespace: dojangkok
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: ai-server
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 169.254.169.254/32
-    - to:
-        - ipBlock:
-            cidr: 10.0.0.0/16
-      ports:
-        - port: 5672
-          protocol: TCP
----
-# 6. FE → BE (SSR 서버사이드 호출)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend-egress
-  namespace: dojangkok
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: frontend
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: backend
-      ports:
-        - port: 8080
-          protocol: TCP
----
-# 7. BE 내부 인바운드 — FE(SSR) + AI Server에서 콜백 허용
+# 4. BE 내부 인바운드 — FE(SSR) + AI Server에서 콜백 허용
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -177,58 +81,4 @@ spec:
               app.kubernetes.io/name: ai-server
       ports:
         - port: 8080
-          protocol: TCP
----
-# 8. Gateway 데이터 플레인 Ingress — ALB/NodePort 트래픽 (externalTrafficPolicy: Local)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-gateway-nodeport-ingress
-  namespace: dojangkok
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: dojangkok-gateway-nginx
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - ipBlock:
-            cidr: 10.0.0.0/18
-      ports:
-        - port: 80
-          protocol: TCP
----
-# 9. Gateway 데이터 플레인 Egress — Controller + App Pod 라우팅 (기존 8번)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-gateway-egress
-  namespace: dojangkok
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: dojangkok-gateway-nginx
-  policyTypes: [Egress]
-  egress:
-    # Controller gRPC (nginx-gateway NS)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: nginx-gateway
-      ports:
-        - port: 443
-          protocol: TCP
-    # App Pod 라우팅 (dojangkok NS 내부)
-    - to:
-        - podSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/name
-                operator: In
-                values: [frontend, backend, chatting-be, ai-server]
-      ports:
-        - port: 3000
-          protocol: TCP
-        - port: 8080
-          protocol: TCP
-        - port: 8000
           protocol: TCP
