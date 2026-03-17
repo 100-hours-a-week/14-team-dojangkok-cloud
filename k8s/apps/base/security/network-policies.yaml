@@ -179,7 +179,26 @@ spec:
         - port: 8080
           protocol: TCP
 ---
-# 8. Gateway 데이터 플레인 Egress — Controller + App Pod 라우팅
+# 8. Gateway 데이터 플레인 Ingress — ALB/NodePort 트래픽 (externalTrafficPolicy: Local)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-nodeport-ingress
+  namespace: dojangkok
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dojangkok-gateway-nginx
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/18
+      ports:
+        - port: 80
+          protocol: TCP
+---
+# 9. Gateway 데이터 플레인 Egress — Controller + App Pod 라우팅 (기존 8번)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
