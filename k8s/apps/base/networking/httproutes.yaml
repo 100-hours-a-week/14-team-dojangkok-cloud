@@ -48,10 +48,10 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /api/chat
+            value: /api/chat/v3
         - path:
             type: PathPrefix
-            value: /api/v3/chat
+            value: /api/v3/direct-chat
       backendRefs:
         - name: chatting-be
           port: 8081
