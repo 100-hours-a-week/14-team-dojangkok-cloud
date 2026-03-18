@@ -19,13 +19,14 @@ services:
   thanos-sidecar:
     image: quay.io/thanos/thanos:v0.36.1
     network_mode: host
+    user: "65534:65534"
     command:
       - sidecar
       - --tsdb.path=/prometheus
       - --prometheus.url=http://localhost:9090
       - --objstore.config-file=/etc/thanos/bucket.yml
     volumes:
-      - prometheus_data:/prometheus:ro
+      - prometheus_data:/prometheus
       - ./thanos-bucket.yml:/etc/thanos/bucket.yml:ro
     restart: unless-stopped
     depends_on:

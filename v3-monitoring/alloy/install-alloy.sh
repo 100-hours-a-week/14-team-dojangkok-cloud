@@ -35,14 +35,11 @@ echo "Installing alloy ..."
 apt-get update -qq
 apt-get install -y -qq alloy
 
-# Override systemd service to use our config and run as root (Docker socket access)
-mkdir -p /etc/systemd/system/alloy.service.d
-cat > /etc/systemd/system/alloy.service.d/override.conf << 'EOF'
-[Service]
-User=root
-ExecStart=
-ExecStart=/usr/bin/alloy run /etc/alloy/config.alloy --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy
-EOF
+# Docker socket access: add alloy user to docker group
+if getent group docker > /dev/null 2>&1; then
+  usermod -aG docker alloy
+  echo "alloy user added to docker group"
+fi
 
 # Create data directory
 mkdir -p /etc/alloy /var/lib/alloy
