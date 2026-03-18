@@ -8,7 +8,7 @@ resources:
 # CI에서 image tag를 업데이트할 때 이 섹션을 수정한다.
 images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
-  newTag: 994fa5e1d7af314b627c50e252d71e70a0b9a95c
+  newTag: 41e129b462070199803eb1857939238c276eec13
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
   newTag: 59279c71b6f500f32c6c4ef02f696dd5723c7a41
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
