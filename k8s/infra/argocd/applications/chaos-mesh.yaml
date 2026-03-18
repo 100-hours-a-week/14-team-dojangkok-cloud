@@ -1,0 +1,64 @@
+# ArgoCD Application — Chaos Mesh (dev)
+# Helm chart: chaos-mesh/chaos-mesh
+# 수동 적용: kubectl apply -f k8s/infra/argocd/applications/chaos-mesh.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chaos-mesh
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.chaos-mesh.org
+    chart: chaos-mesh
+    targetRevision: "2.7.1"
+    helm:
+      releaseName: chaos-mesh
+      valuesObject:
+        # 컨테이너 런타임 (kubeadm + containerd)
+        chaosDaemon:
+          runtime: containerd
+          socketPath: /run/containerd/containerd.sock
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        # Controller Manager
+        controllerManager:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        # Dashboard (dev 환경 활성화)
+        dashboard:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          service:
+            type: ClusterIP  # port-forward로 접근
+
+        # DNS Server (불필요 시 비활성화)
+        dnsServer:
+          create: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chaos-mesh
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
