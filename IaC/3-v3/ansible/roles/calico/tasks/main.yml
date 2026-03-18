@@ -5,7 +5,7 @@
 
 - name: Install Tigera Operator
   command: >
-    kubectl --kubeconfig=/home/ubuntu/.kube/config apply --server-side -f
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply --server-side --force-conflicts -f
     https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
   register: tigera_result
   changed_when: "'configured' in tigera_result.stdout or 'created' in tigera_result.stdout"
