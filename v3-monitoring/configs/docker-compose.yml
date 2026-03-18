@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   thanos-sidecar:
-    image: thanosio/thanos:latest
+    image: quay.io/thanos/thanos:v0.36.1
     network_mode: host
     command:
       - sidecar
