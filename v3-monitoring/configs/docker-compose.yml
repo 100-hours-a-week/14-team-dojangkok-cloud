@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    network_mode: host
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--storage.tsdb.min-block-duration=2h"
+      - "--storage.tsdb.max-block-duration=2h"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  thanos-sidecar:
+    image: quay.io/thanos/thanos:v0.36.1
+    network_mode: host
+    user: "65534:65534"
+    command:
+      - sidecar
+      - --tsdb.path=/prometheus/data
+      - --prometheus.url=http://localhost:9090
+      - --objstore.config-file=/etc/thanos/bucket.yml
+    volumes:
+      - prometheus_data:/prometheus
+      - ./thanos-bucket.yml:/etc/thanos/bucket.yml:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  thanos-query:
+    image: quay.io/thanos/thanos:v0.36.1
+    network_mode: host
+    command:
+      - query
+      - --http-address=0.0.0.0:19192
+      - --grpc-address=0.0.0.0:19193
+      - --store=localhost:10901
+      - --store=localhost:10904
+      - --query.replica-label=replica
+    restart: unless-stopped
+    depends_on:
+      - thanos-sidecar
+      - thanos-store
+
+  thanos-store:
+    image: quay.io/thanos/thanos:v0.36.1
+    network_mode: host
+    user: "65534:65534"
+    command:
+      - store
+      - --http-address=0.0.0.0:10905
+      - --grpc-address=0.0.0.0:10904
+      - --data-dir=/var/thanos/store
+      - --objstore.config-file=/etc/thanos/bucket.yml
+    volumes:
+      - ./thanos-bucket.yml:/etc/thanos/bucket.yml:ro
+      - thanos_store_data:/var/thanos/store
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.4.2
+    network_mode: host
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    volumes:
+      - ./loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    network_mode: host
+    command:
+      - "-config.file=/etc/tempo/config.yml"
+    volumes:
+      - ./tempo-config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/var/tempo
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    network_mode: host
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  thanos_store_data:
+  loki_data:
+  tempo_data:
+  grafana_data:

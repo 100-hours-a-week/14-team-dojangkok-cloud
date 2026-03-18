@@ -1,0 +1,75 @@
+{
+  "uid": "k8s-pods",
+  "title": "K8S Pods",
+  "tags": ["k8s"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "query": "label_values(kube_pod_info, namespace)",
+        "datasource": { "uid": "prometheus" },
+        "current": { "text": "dojangkok", "value": "dojangkok" },
+        "refresh": 2,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pod Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "kube_pod_status_phase{namespace=~\"$namespace\"} == 1", "format": "table", "instant": true }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "uid": true, "Value": true }, "renameByName": { "namespace": "Namespace", "pod": "Pod", "phase": "Phase" } } }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Pod CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [{ "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod!=\"\"}[5m]))", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 3,
+      "title": "Pod Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [{ "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\", pod!=\"\"})", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 4,
+      "title": "Pod Restarts",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [{ "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[5m]) > 0", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" }
+    },
+    {
+      "id": 5,
+      "title": "Container Status",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "count(kube_pod_container_status_running{namespace=~\"$namespace\"} == 1)", "legendFormat": "Running" },
+        { "expr": "count(kube_pod_container_status_waiting{namespace=~\"$namespace\"} == 1) or vector(0)", "legendFormat": "Waiting" }
+      ],
+      "datasource": { "uid": "prometheus" }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

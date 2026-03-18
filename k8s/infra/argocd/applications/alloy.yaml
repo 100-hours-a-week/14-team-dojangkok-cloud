@@ -1,0 +1,229 @@
+# ArgoCD Application — Grafana Alloy DaemonSet (dev)
+# Helm chart: grafana/alloy
+# 수동 적용: kubectl apply -f k8s/infra/argocd/applications/alloy.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: "1.0.0"
+    helm:
+      releaseName: alloy
+      valuesObject:
+        alloy:
+          mode: flow
+          clustering:
+            enabled: false
+          configMap:
+            content: |
+              // ── Remote Write: Prometheus ──
+              prometheus.remote_write "monitor" {
+                endpoint {
+                  url = "http://10.0.0.167:9090/api/v1/write"
+                }
+              }
+
+              // ── Remote Write: Loki ──
+              loki.write "monitor" {
+                endpoint {
+                  url = "http://10.0.0.167:3100/loki/api/v1/push"
+                }
+              }
+
+              // ── Relabel: instance name ──
+              prometheus.relabel "instance_label" {
+                forward_to = [prometheus.remote_write.monitor.receiver]
+                rule {
+                  target_label = "instance"
+                  replacement  = env("HOSTNAME")
+                }
+                rule {
+                  source_labels = ["job"]
+                  regex         = "integrations/unix"
+                  target_label  = "job"
+                  replacement   = "node"
+                }
+              }
+
+              // ── Node Exporter (built-in) ──
+              prometheus.exporter.unix "node" {
+                procfs_path    = "/host/proc"
+                sysfs_path     = "/host/sys"
+                set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+              }
+
+              prometheus.scrape "node" {
+                targets         = prometheus.exporter.unix.node.targets
+                forward_to      = [prometheus.relabel.instance_label.receiver]
+                scrape_interval = "15s"
+                job_name        = "node"
+              }
+
+              // ── K8S Pod Discovery (annotation 기반) ──
+              discovery.kubernetes "pods" {
+                role = "pod"
+              }
+
+              discovery.relabel "pod_filter" {
+                targets = discovery.kubernetes.pods.targets
+
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+                  regex         = "true"
+                  action        = "keep"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_port"]
+                  regex         = "(\\d+)"
+                  target_label  = "__address__"
+                  replacement   = "${1}"
+                  action        = "replace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+                  regex         = "(.+)"
+                  target_label  = "__metrics_path__"
+                  action        = "replace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+              }
+
+              prometheus.scrape "pods" {
+                targets         = discovery.relabel.pod_filter.output
+                forward_to      = [prometheus.remote_write.monitor.receiver]
+                scrape_interval = "15s"
+              }
+
+              // ── kube-state-metrics ──
+              prometheus.scrape "kube_state" {
+                targets = [{
+                  __address__ = "kube-state-metrics.monitoring.svc.cluster.local:8080",
+                }]
+                forward_to      = [prometheus.remote_write.monitor.receiver]
+                scrape_interval = "30s"
+                job_name        = "kube-state-metrics"
+              }
+
+              // ── Container Logs ──
+              discovery.kubernetes "pod_logs" {
+                role = "pod"
+              }
+
+              discovery.relabel "pod_logs_labels" {
+                targets = discovery.kubernetes.pod_logs.targets
+
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_node_name"]
+                  target_label  = "node"
+                }
+              }
+
+              loki.source.kubernetes "pods" {
+                targets    = discovery.relabel.pod_logs_labels.output
+                forward_to = [loki.write.monitor.receiver]
+              }
+
+              // ── OTLP Receiver (Traces) ──
+              otelcol.receiver.otlp "default" {
+                grpc {
+                  endpoint = "0.0.0.0:4317"
+                }
+                http {
+                  endpoint = "0.0.0.0:4318"
+                }
+                output {
+                  traces = [otelcol.exporter.otlp.tempo.input]
+                }
+              }
+
+              otelcol.exporter.otlp "tempo" {
+                client {
+                  endpoint = "10.0.0.167:4317"
+                  tls {
+                    insecure             = true
+                    insecure_skip_verify = true
+                  }
+                }
+              }
+          extraPorts:
+            - name: otlp-grpc
+              port: 4317
+              targetPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              port: 4318
+              targetPort: 4318
+              protocol: TCP
+          mounts:
+            varlog: true
+            extra:
+              - name: host-proc
+                mountPath: /host/proc
+                readOnly: true
+              - name: host-sys
+                mountPath: /host/sys
+                readOnly: true
+
+        controller:
+          type: daemonset
+          volumes:
+            extra:
+              - name: host-proc
+                hostPath:
+                  path: /proc
+              - name: host-sys
+                hostPath:
+                  path: /sys
+
+        resources:
+          requests:
+            cpu: 40m
+            memory: 48Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+        serviceAccount:
+          create: true
+
+        rbac:
+          create: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

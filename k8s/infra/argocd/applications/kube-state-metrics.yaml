@@ -1,0 +1,37 @@
+# ArgoCD Application — kube-state-metrics (dev)
+# Helm chart: prometheus-community/kube-state-metrics
+# 수동 적용: kubectl apply -f k8s/infra/argocd/applications/kube-state-metrics.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-state-metrics
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-state-metrics
+    targetRevision: "5.27.0"
+    helm:
+      releaseName: kube-state-metrics
+      valuesObject:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        # Prometheus Operator 없으므로 ServiceMonitor 비활성
+        prometheus:
+          monitor:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

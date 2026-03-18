@@ -31,6 +31,15 @@ spec:
                 name: ai-server-config
             - secretRef:
                 name: ai-server-secret
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: "ai-server"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.monitoring.svc.cluster.local:4317"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
           readinessProbe:
             httpGet:
               path: /health

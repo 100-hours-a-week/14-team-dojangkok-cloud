@@ -1,0 +1,171 @@
+// =============================================================================
+// Grafana Alloy config — K8S DaemonSet
+// Deployed as ConfigMap in monitoring namespace
+// =============================================================================
+
+// --- Remote Write: Prometheus ---
+prometheus.remote_write "monitor" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:9090/api/v1/write"
+  }
+}
+
+// --- Remote Write: Loki ---
+loki.write "monitor" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:3100/loki/api/v1/push"
+  }
+}
+
+// --- Relabel: set instance name ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.monitor.receiver]
+  rule {
+    target_label = "instance"
+    replacement  = env("HOSTNAME")
+  }
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
+}
+
+// --- Node Exporter (host paths mounted) ---
+prometheus.exporter.unix "node" {
+  procfs_path    = "/host/proc"
+  sysfs_path     = "/host/sys"
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// --- K8S Pod Discovery ---
+discovery.kubernetes "pods" {
+  role = "pod"
+}
+
+discovery.relabel "pod_filter" {
+  targets = discovery.kubernetes.pods.targets
+
+  // Keep only pods with prometheus.io/scrape annotation
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+    regex         = "true"
+    action        = "keep"
+  }
+
+  // Use custom port if specified
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_port"]
+    regex         = "(\\d+)"
+    target_label  = "__address__"
+    replacement   = "${1}"
+    action        = "replace"
+  }
+
+  // Use custom path if specified
+  rule {
+    source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+    regex         = "(.+)"
+    target_label  = "__metrics_path__"
+    action        = "replace"
+  }
+
+  // Add namespace label
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+
+  // Add pod label
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
+  // Add container label
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+}
+
+prometheus.scrape "pods" {
+  targets         = discovery.relabel.pod_filter.output
+  forward_to      = [prometheus.remote_write.monitor.receiver]
+  scrape_interval = "15s"
+}
+
+// --- kube-state-metrics ---
+prometheus.scrape "kube_state" {
+  targets = [{
+    __address__ = "kube-state-metrics.monitoring.svc.cluster.local:8080",
+  }]
+  forward_to      = [prometheus.remote_write.monitor.receiver]
+  scrape_interval = "30s"
+  job_name        = "kube-state-metrics"
+}
+
+// --- Container Logs (/var/log/pods) ---
+discovery.kubernetes "pod_logs" {
+  role = "pod"
+}
+
+discovery.relabel "pod_logs_labels" {
+  targets = discovery.kubernetes.pod_logs.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    target_label  = "node"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pod_logs_labels.output
+  forward_to = [loki.write.monitor.receiver]
+}
+
+// --- OTLP Receiver (Application Traces) ---
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "MONITOR_IP_PLACEHOLDER:4317"
+    tls {
+      insecure             = true
+      insecure_skip_verify = true
+    }
+  }
+}
