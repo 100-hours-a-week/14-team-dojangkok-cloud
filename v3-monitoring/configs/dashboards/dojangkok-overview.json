@@ -1,0 +1,185 @@
+{
+  "uid": "dojangkok-overview",
+  "title": "Dojangkok Service Overview",
+  "tags": ["k8s", "dojangkok", "backend"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "query": "label_values(kube_pod_info{namespace=\"dojangkok\"}, created_by_name)",
+        "datasource": { "uid": "prometheus" },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "pod",
+        "type": "query",
+        "query": "label_values(kube_pod_info{namespace=\"dojangkok\", created_by_name=~\"$service\"}, pod)",
+        "datasource": { "uid": "prometheus" },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "title": "== Service Status ==",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "title": "Pod Status",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "kube_pod_info{namespace=\"dojangkok\", pod=~\"$pod\"}", "format": "table", "instant": true }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "uid": true, "endpoint": true, "service": true, "Value": true, "namespace": true, "priority_class": true, "host_ip": true, "created_by_kind": true }, "renameByName": { "pod": "Pod", "pod_ip": "Pod IP", "node": "Node", "created_by_name": "Owner" } } }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Pod Restarts (5m)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 1 },
+      "targets": [{ "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"dojangkok\", pod=~\"$pod\"}[5m]))", "legendFormat": "Restarts" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Running Pods",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 16, "y": 1 },
+      "targets": [{ "expr": "count(kube_pod_status_phase{namespace=\"dojangkok\", pod=~\"$pod\", phase=\"Running\"} == 1)", "legendFormat": "Running" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } } }
+    },
+    {
+      "id": 4,
+      "title": "Available Replicas",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 4, "x": 20, "y": 1 },
+      "targets": [
+        { "expr": "kube_deployment_status_replicas_available{namespace=\"dojangkok\"}", "legendFormat": "{{deployment}}" }
+      ],
+      "datasource": { "uid": "prometheus" }
+    },
+    {
+      "id": 101,
+      "title": "== Traces (Tempo) ==",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "title": "Recent Traces",
+      "description": "최근 트레이스 — 클릭하면 상세 span 확인",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [{
+        "datasource": { "uid": "tempo" },
+        "queryType": "nativeSearch",
+        "serviceName": "backend",
+        "limit": 20
+      }],
+      "datasource": { "uid": "tempo" }
+    },
+    {
+      "id": 102,
+      "title": "== Metrics ==",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "collapsed": false
+    },
+    {
+      "id": 6,
+      "title": "CPU Usage by Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "targets": [{ "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"dojangkok\", pod=~\"$pod\", container!=\"\"}[5m]))", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20 } } }
+    },
+    {
+      "id": 7,
+      "title": "Memory Usage by Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "targets": [{ "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"dojangkok\", pod=~\"$pod\", container!=\"\"})", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 20 } } }
+    },
+    {
+      "id": 8,
+      "title": "Network I/O by Pod",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "targets": [
+        { "expr": "sum by (pod) (rate(container_network_receive_bytes_total{namespace=\"dojangkok\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{pod}} rx" },
+        { "expr": "sum by (pod) (rate(container_network_transmit_bytes_total{namespace=\"dojangkok\", pod=~\"$pod\"}[5m])) * -1", "legendFormat": "{{pod}} tx" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "fillOpacity": 20 } } }
+    },
+    {
+      "id": 9,
+      "title": "Resource Usage vs Limits",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"dojangkok\", pod=~\"$pod\", container!=\"\"}) / sum by (pod) (kube_pod_container_resource_limits{namespace=\"dojangkok\", pod=~\"$pod\", resource=\"memory\"}) * 100", "legendFormat": "{{pod}} memory %" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] } } }
+    },
+    {
+      "id": 10,
+      "title": "Pod Restart History",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "targets": [{ "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"dojangkok\", pod=~\"$pod\"}[5m]) > 0", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80 } } }
+    },
+    {
+      "id": 103,
+      "title": "== Logs (Loki) ==",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "collapsed": false
+    },
+    {
+      "id": 11,
+      "title": "Application Logs",
+      "description": "dojangkok namespace Pod 로그",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 34 },
+      "targets": [{ "expr": "{namespace=\"dojangkok\", pod=~\"$pod\"}", "refId": "A" }],
+      "datasource": { "uid": "loki" }
+    },
+    {
+      "id": 12,
+      "title": "Error Logs Only",
+      "description": "에러/예외 로그만 필터",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 44 },
+      "targets": [{ "expr": "{namespace=\"dojangkok\", pod=~\"$pod\"} |~ \"(?i)error|exception|fail|timeout|refused\"", "refId": "A" }],
+      "datasource": { "uid": "loki" }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

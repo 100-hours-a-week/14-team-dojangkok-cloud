@@ -1,0 +1,165 @@
+{
+  "uid": "k8s-chaos-detection",
+  "title": "K8S Pod Chaos Detection",
+  "tags": ["k8s", "chaos"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "query": "label_values(kube_pod_info, namespace)",
+        "datasource": { "uid": "prometheus" },
+        "current": { "text": "dojangkok", "value": "dojangkok" },
+        "refresh": 2,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pod Status Overview",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "count(kube_pod_status_phase{namespace=~\"$namespace\", phase=\"Running\"} == 1)", "legendFormat": "Running" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } } }
+    },
+    {
+      "id": 2,
+      "title": "Pending Pods",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "count(kube_pod_status_phase{namespace=~\"$namespace\", phase=\"Pending\"} == 1) or vector(0)", "legendFormat": "Pending" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Failed Pods",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "count(kube_pod_status_phase{namespace=~\"$namespace\", phase=\"Failed\"} == 1) or vector(0)", "legendFormat": "Failed" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 4,
+      "title": "OOMKilled Containers",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "count(kube_pod_container_status_last_terminated_reason{namespace=~\"$namespace\", reason=\"OOMKilled\"}) or vector(0)", "legendFormat": "OOMKilled" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Node Ready",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})", "legendFormat": "Ready" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 3 }] } } }
+    },
+    {
+      "id": 6,
+      "title": "Total Restarts (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[24h]))", "legendFormat": "Restarts" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] } } }
+    },
+    {
+      "id": 7,
+      "title": "Pod Restarts Timeline",
+      "description": "Chaos Kill/Failure 실험 시 급증 감지",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[5m]) > 0", "legendFormat": "{{pod}}" }],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80 } } }
+    },
+    {
+      "id": 8,
+      "title": "Pod Phase Changes",
+      "description": "Running→Failed/Pending 전환 감지",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "count by (phase) (kube_pod_status_phase{namespace=~\"$namespace\"} == 1)", "legendFormat": "{{phase}}" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 30 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "Running" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+        { "matcher": { "id": "byName", "options": "Pending" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+        { "matcher": { "id": "byName", "options": "Failed" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+      ] }
+    },
+    {
+      "id": 9,
+      "title": "CPU Usage vs Limit",
+      "description": "CPU Stress 실험 시 limit 접근 감지",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod!=\"\", container!=\"\"}[5m]))", "legendFormat": "{{pod}} usage" },
+        { "expr": "sum by (pod) (kube_pod_container_resource_limits{namespace=~\"$namespace\", resource=\"cpu\"})", "legendFormat": "{{pod}} limit" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 10,
+      "title": "Memory Usage vs Limit",
+      "description": "Memory Stress 실험 시 OOM 접근 감지",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\", pod!=\"\", container!=\"\"})", "legendFormat": "{{pod}} usage" },
+        { "expr": "sum by (pod) (kube_pod_container_resource_limits{namespace=~\"$namespace\", resource=\"memory\"})", "legendFormat": "{{pod}} limit" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 11,
+      "title": "Deployment Available Replicas",
+      "description": "replicas 변화 → Kill/Failure 실험 감지",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "kube_deployment_status_replicas_available{namespace=~\"$namespace\"}", "legendFormat": "{{deployment}} available" },
+        { "expr": "kube_deployment_spec_replicas{namespace=~\"$namespace\"}", "legendFormat": "{{deployment}} desired" }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10 } } }
+    },
+    {
+      "id": 12,
+      "title": "Container Status Detail",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}", "format": "table", "instant": true }
+      ],
+      "datasource": { "uid": "prometheus" },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "uid": true, "endpoint": true, "service": true }, "renameByName": { "namespace": "Namespace", "pod": "Pod", "container": "Container", "Value": "Restarts" } } }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Chaos/Error Logs",
+      "type": "logs",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "targets": [{ "expr": "{namespace=~\"$namespace\"} |~ \"(?i)error|exception|killed|oom|crash|restart|timeout\"", "refId": "A" }],
+      "datasource": { "uid": "loki" }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
