@@ -49,6 +49,9 @@ spec:
         - path:
             type: PathPrefix
             value: /api/chat
+        - path:
+            type: PathPrefix
+            value: /api/v3/chat
       backendRefs:
         - name: chatting-be
           port: 8081
