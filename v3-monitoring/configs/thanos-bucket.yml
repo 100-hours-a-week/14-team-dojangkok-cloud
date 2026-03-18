@@ -3,3 +3,4 @@ config:
   bucket: S3_BUCKET_PLACEHOLDER
   endpoint: s3.ap-northeast-2.amazonaws.com
   region: ap-northeast-2
+prefix: prometheus
