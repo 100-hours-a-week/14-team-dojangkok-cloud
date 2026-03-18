@@ -82,3 +82,23 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+---
+# 5. AI Server 내부 인바운드 — chatting-be에서 AI 챗봇 호출 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ai-server-from-chatting
+  namespace: dojangkok
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chatting-be
+      ports:
+        - port: 8000
+          protocol: TCP
