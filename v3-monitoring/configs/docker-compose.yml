@@ -22,7 +22,7 @@ services:
     user: "65534:65534"
     command:
       - sidecar
-      - --tsdb.path=/prometheus
+      - --tsdb.path=/prometheus/data
       - --prometheus.url=http://localhost:9090
       - --objstore.config-file=/etc/thanos/bucket.yml
     volumes:
