@@ -181,7 +181,7 @@ spec:
                 forward_to = [loki.write.monitor.receiver]
               }
 
-              // ── OTLP Receiver (Traces) ──
+              // ── OTLP Receiver (Traces + Logs + Metrics) ──
               otelcol.receiver.otlp "default" {
                 grpc {
                   endpoint = "0.0.0.0:4317"
@@ -190,7 +190,9 @@ spec:
                   endpoint = "0.0.0.0:4318"
                 }
                 output {
-                  traces = [otelcol.exporter.otlp.tempo.input]
+                  traces  = [otelcol.exporter.otlp.tempo.input]
+                  logs    = [otelcol.exporter.loki.default.input]
+                  metrics = [otelcol.exporter.prometheus.default.input]
                 }
               }
 
@@ -202,6 +204,14 @@ spec:
                     insecure_skip_verify = true
                   }
                 }
+              }
+
+              otelcol.exporter.loki "default" {
+                forward_to = [loki.write.monitor.receiver]
+              }
+
+              otelcol.exporter.prometheus "default" {
+                forward_to = [prometheus.remote_write.monitor.receiver]
               }
           extraPorts:
             - name: otlp-grpc
