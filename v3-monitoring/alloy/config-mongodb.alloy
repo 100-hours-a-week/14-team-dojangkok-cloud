@@ -1,0 +1,73 @@
+// =============================================================================
+// Grafana Alloy config — MongoDB Replica Set (per-node)
+// Deploy: substitute INSTANCE_LABEL_PLACEHOLDER with node name
+//   e.g. dev-dojangkok-v2-mongodb-2a
+// Requires MONGODB_URI environment variable,
+//   e.g. "mongodb://exporter:password@localhost:27017/admin"
+// =============================================================================
+
+// --- Remote Write: Prometheus ---
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:9090/api/v1/write"
+  }
+}
+
+// --- Remote Write: Loki ---
+loki.write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:3100/loki/api/v1/push"
+  }
+}
+
+// --- Relabel: set instance name ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.default.receiver]
+  rule {
+    target_label = "instance"
+    replacement  = "INSTANCE_LABEL_PLACEHOLDER"
+  }
+  rule {
+    target_label = "service"
+    replacement  = "mongodb"
+  }
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
+}
+
+// --- Node Exporter ---
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// --- systemd Journal Logs ---
+loki.source.journal "systemd" {
+  forward_to = [loki.write.default.receiver]
+  labels     = {
+    job     = "journal",
+    host    = "INSTANCE_LABEL_PLACEHOLDER",
+    service = "mongodb",
+  }
+}
+
+// --- MongoDB Exporter ---
+// Uses percona/mongodb_exporter — must be running as sidecar or systemd service
+// Scrapes localhost:9216 (default mongodb_exporter port)
+prometheus.scrape "mongodb" {
+  targets = [{
+    __address__ = "localhost:9216",
+  }]
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+}

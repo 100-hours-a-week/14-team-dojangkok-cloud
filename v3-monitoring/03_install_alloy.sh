@@ -75,8 +75,8 @@ echo "[1/4] Uploading Alloy configs to S3 ..."
 TMPDIR_CONFIGS=$(mktemp -d)
 trap "rm -rf '$TMPDIR_CONFIGS'" EXIT
 
-for entry in be:config-be.alloy fe:config-fe.alloy mysql:config-mysql.alloy \
-             redis:config-redis.alloy mq:config-mq.alloy monitor:config-monitor.alloy; do
+# --- V2 단일 노드 configs (레거시, BE/FE/Monitor) ---
+for entry in be:config-be.alloy fe:config-fe.alloy monitor:config-monitor.alloy; do
   target="${entry%%:*}"
   config_file="${entry##*:}"
   src="${ALLOY_DIR}/${config_file}"
@@ -90,6 +90,36 @@ for entry in be:config-be.alloy fe:config-fe.alloy mysql:config-mysql.alloy \
       -e "s/ENV_PREFIX_PLACEHOLDER/${ENV_PREFIX}/g" \
       "$src" > "${TMPDIR_CONFIGS}/${target}.alloy"
   echo "  Prepared: ${target}.alloy"
+done
+
+# --- V3 클러스터 configs (per-node label substitution) ---
+# Format: config_template:service_name:instance_label_prefix
+CLUSTER_CONFIGS=(
+  "config-mysql-cluster.alloy:mysql-cluster:dev-dojangkok-v2-mysql"
+  "config-redis-cluster.alloy:redis-cluster:dev-dojangkok-v2-redis"
+  "config-redis-sentinel.alloy:redis-sentinel:dev-dojangkok-v2-redis-sentinel"
+  "config-mq-cluster.alloy:mq-cluster:dev-dojangkok-v2-mq"
+  "config-mongodb.alloy:mongodb:dev-dojangkok-v2-mongodb"
+  "config-proxysql.alloy:proxysql:dev-dojangkok-v2-proxysql"
+)
+
+for cluster_entry in "${CLUSTER_CONFIGS[@]}"; do
+  IFS=: read -r config_file svc_name label_prefix <<< "$cluster_entry"
+  src="${ALLOY_DIR}/${config_file}"
+
+  if [[ ! -f "$src" ]]; then
+    echo "  ERROR: Config not found: $src"
+    exit 1
+  fi
+
+  for az in 2a 2b 2c; do
+    instance_label="${label_prefix}-${az}"
+    out_name="${svc_name}-${az}"
+    sed -e "s/MONITOR_IP_PLACEHOLDER/${MONITOR_PRIVATE_IP}/g" \
+        -e "s/INSTANCE_LABEL_PLACEHOLDER/${instance_label}/g" \
+        "$src" > "${TMPDIR_CONFIGS}/${out_name}.alloy"
+    echo "  Prepared: ${out_name}.alloy (instance=${instance_label})"
+  done
 done
 
 cp "${ALLOY_DIR}/install-alloy.sh" "${TMPDIR_CONFIGS}/install-alloy.sh"
@@ -158,42 +188,92 @@ done
 echo ""
 
 # ============================================================
-# Step 3: MySQL/Redis/MQ
+# Step 3: Cluster Nodes — Dynamic Discovery by Name Tag
 # ============================================================
-echo "[3/4] Deploying to MySQL/Redis/MQ ..."
+echo "[3/4] Deploying to Cluster Nodes ..."
 
 INSTALL_SCRIPT_B64=$(base64 < "${ALLOY_DIR}/install-alloy.sh")
 
-for entry in mysql:${TARGET_MYSQL_INSTANCE_ID} redis:${TARGET_REDIS_INSTANCE_ID} mq:${TARGET_MQ_INSTANCE_ID}; do
-  target="${entry%%:*}"
-  instance_id="${entry##*:}"
+# Helper: deploy Alloy to a single instance
+deploy_alloy_to_instance() {
+  local instance_id="$1" config_name="$2"
   echo ""
-  echo "  --- ${target} (${instance_id}) ---"
+  echo "  --- ${config_name} (${instance_id}) ---"
 
   # Install AWS CLI if missing
+  local cli_check
   cli_check=$(ssm_run "$instance_id" "command -v aws && echo 'EXISTS' || echo 'MISSING'" 30 2>/dev/null) || cli_check="MISSING"
   if echo "$cli_check" | grep -q "MISSING"; then
     echo "  Installing AWS CLI ..."
     ssm_run "$instance_id" "apt-get install -y -qq unzip curl
 curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp/ && /tmp/aws/install
-rm -rf /tmp/awscliv2.zip /tmp/aws" 120 || { ERRORS=$((ERRORS + 1)); continue; }
+rm -rf /tmp/awscliv2.zip /tmp/aws" 120 || { ERRORS=$((ERRORS + 1)); return 1; }
   fi
 
   # Install Alloy if missing
+  local alloy_check
   alloy_check=$(ssm_run "$instance_id" "command -v alloy && echo 'EXISTS' || echo 'MISSING'" 30 2>/dev/null) || alloy_check="MISSING"
   if echo "$alloy_check" | grep -q "MISSING"; then
     echo "  Installing Alloy ..."
     ssm_run "$instance_id" "echo '${INSTALL_SCRIPT_B64}' | base64 -d > /tmp/install-alloy.sh
-chmod +x /tmp/install-alloy.sh && bash /tmp/install-alloy.sh && rm -f /tmp/install-alloy.sh" 180 || { ERRORS=$((ERRORS + 1)); continue; }
+chmod +x /tmp/install-alloy.sh && bash /tmp/install-alloy.sh && rm -f /tmp/install-alloy.sh" 180 || { ERRORS=$((ERRORS + 1)); return 1; }
   fi
 
   # Deploy config
-  DEPLOY_CMD="aws s3 cp s3://${S3_CONFIG_BUCKET}/${S3_CONFIG_PREFIX}/${target}.alloy /etc/alloy/config.alloy --region ${AWS_REGION}
+  local deploy_cmd="aws s3 cp s3://${S3_CONFIG_BUCKET}/${S3_CONFIG_PREFIX}/${config_name}.alloy /etc/alloy/config.alloy --region ${AWS_REGION}
 systemctl restart alloy && sleep 2
 systemctl is-active alloy && echo 'Alloy OK' || echo 'Alloy FAILED'"
-  ssm_run "$instance_id" "$DEPLOY_CMD" 60 || ERRORS=$((ERRORS + 1))
-done
+  ssm_run "$instance_id" "$deploy_cmd" 60 || ERRORS=$((ERRORS + 1))
+}
+
+# Discover cluster instances by Name tag pattern and deploy
+# Name tag format: dev-dojangkok-v2-{service}-{az}
+# Config name format: {config_prefix}-{az}
+#
+# Arguments: tag_pattern config_prefix
+#   tag_pattern: Name tag glob (e.g. "dev-dojangkok-v2-mysql-2*")
+#   config_prefix: S3 config name prefix (e.g. "mysql-cluster")
+deploy_cluster_service() {
+  local tag_pattern="$1" config_prefix="$2"
+  echo ""
+  echo "  ===== Discovering: ${tag_pattern} ====="
+
+  local instances
+  instances=$($AWS ec2 describe-instances \
+    --filters \
+      "Name=tag:Name,Values=${tag_pattern}" \
+      "Name=vpc-id,Values=${VPC_ID}" \
+      "Name=instance-state-name,Values=running" \
+    --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0]]' \
+    --output text 2>/dev/null) || true
+
+  if [[ -z "$instances" ]]; then
+    echo "  WARNING: No running instances found for pattern '${tag_pattern}'"
+    ERRORS=$((ERRORS + 1))
+    return 1
+  fi
+
+  local count=0
+  while IFS=$'\t' read -r iid name; do
+    # Extract AZ suffix from name (last segment, e.g. "2a" from "dev-dojangkok-v2-mysql-2a")
+    local az_suffix="${name##*-}"
+    local config_name="${config_prefix}-${az_suffix}"
+    deploy_alloy_to_instance "$iid" "$config_name"
+    count=$((count + 1))
+  done <<< "$instances"
+
+  echo "  Deployed to ${count} instance(s) for ${config_prefix}"
+}
+
+# --- Deploy all cluster services ---
+deploy_cluster_service "dev-dojangkok-v2-mysql-2*"          "mysql-cluster"
+deploy_cluster_service "dev-dojangkok-v2-proxysql-2*"       "proxysql"
+deploy_cluster_service "dev-dojangkok-v2-redis-2*"          "redis-cluster"
+deploy_cluster_service "dev-dojangkok-v2-redis-sentinel-2*" "redis-sentinel"
+deploy_cluster_service "dev-dojangkok-v2-mq-2*"             "mq-cluster"
+deploy_cluster_service "dev-dojangkok-v2-mongodb-2*"        "mongodb"
+
 echo ""
 
 # ============================================================

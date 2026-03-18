@@ -1,12 +1,20 @@
 apiVersion: 1
 
 providers:
-  - name: default
+  - name: ec2-infra
     orgId: 1
-    folder: ''
+    folder: 'EC2 Infra'
     type: file
     disableDeletion: false
     editable: true
     options:
-      path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: false
+      path: /var/lib/grafana/dashboards/ec2
+
+  - name: k8s
+    orgId: 1
+    folder: 'K8S'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards/k8s

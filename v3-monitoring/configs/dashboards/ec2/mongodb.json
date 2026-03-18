@@ -1,8 +1,8 @@
 {
-  "uid": "mysql",
-  "title": "MySQL",
-  "description": "MySQL server monitoring - connections, queries, InnoDB metrics, and slow query logs",
-  "tags": ["mysql", "database"],
+  "uid": "mongodb",
+  "title": "MongoDB",
+  "description": "MongoDB Replica Set monitoring - replica health, operations, connections, memory, and logs",
+  "tags": ["mongodb", "database"],
   "timezone": "browser",
   "editable": true,
   "graphTooltip": 1,
@@ -24,7 +24,7 @@
         "label": "Instance",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "query": "label_values(mysql_up, instance)",
+        "query": "label_values(mongodb_up, instance)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -55,224 +55,172 @@
   "panels": [
     {
       "type": "row",
-      "title": "Status",
+      "title": "Replica Set Health",
       "collapsed": false,
-      "id": 100,
+      "id": 50,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "panels": []
     },
     {
-      "id": 1,
-      "title": "MySQL Up",
-      "description": "Whether MySQL is reachable (1 = Up, 0 = Down)",
+      "id": 51,
+      "title": "RS Members Online",
+      "description": "Number of MongoDB replica set members currently UP",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_up{instance=~\"$instance\"}",
-          "legendFormat": "",
+          "expr": "count(mongodb_up{instance=~\"$instance\"} == 1)",
+          "legendFormat": "Online",
           "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": { "text": "Down", "color": "red", "index": 0 },
-                "1": { "text": "Up", "color": "green", "index": 1 }
-              }
-            }
-          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
             ]
           },
           "color": { "mode": "thresholds" },
           "unit": "short",
-          "noValue": "Down"
+          "noValue": "0"
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
         "orientation": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
+        "textMode": "value_and_name",
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto"
       }
     },
     {
-      "id": 2,
-      "title": "Connections",
-      "description": "Current number of connected threads",
-      "type": "stat",
+      "id": 52,
+      "title": "RS Member State",
+      "description": "Replica set member state per node (PRIMARY/SECONDARY/ARBITER/DOWN)",
+      "type": "table",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 5, "w": 12, "x": 6, "y": 1 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_status_threads_connected{instance=~\"$instance\"}",
-          "legendFormat": "",
-          "instant": true
+          "expr": "mongodb_mongod_replset_member_state{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
+          "instant": true,
+          "format": "table"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "red", "value": 200 }
-            ]
-          },
           "color": { "mode": "thresholds" },
-          "unit": "short",
-          "noValue": "0"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 3,
-      "title": "QPS",
-      "description": "Queries per second (5m rate)",
-      "type": "stat",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(mysql_global_status_queries{instance=~\"$instance\"}[5m])",
-          "legendFormat": "",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null }
             ]
           },
-          "color": { "mode": "thresholds" },
-          "unit": "ops",
-          "decimals": 1,
-          "noValue": "0"
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": { "text": "PRIMARY", "color": "green", "index": 0 },
+                "2": { "text": "SECONDARY", "color": "blue", "index": 1 },
+                "7": { "text": "ARBITER", "color": "yellow", "index": 2 },
+                "8": { "text": "DOWN", "color": "red", "index": 3 }
+              }
+            }
+          ]
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
+        "showHeader": true,
+        "sortBy": [{ "displayName": "instance", "desc": false }]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true },
+            "renameByName": { "instance": "Node", "Value": "State" }
+          }
+        }
+      ]
     },
     {
-      "id": 4,
-      "title": "Slow Queries/s",
-      "description": "Rate of slow queries per second (5m rate). Red when above 0.1/s",
-      "type": "stat",
+      "id": 53,
+      "title": "Replication Lag",
+      "description": "Replication lag in seconds per replica set member",
+      "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(mysql_global_status_slow_queries{instance=~\"$instance\"}[5m])",
-          "legendFormat": "",
-          "instant": true
+          "expr": "mongodb_mongod_replset_member_replication_lag{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "color": { "mode": "palette-classic" },
+          "unit": "s",
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.1 }
-            ]
-          },
-          "color": { "mode": "thresholds" },
-          "unit": "ops",
-          "decimals": 3,
-          "noValue": "0"
+            "steps": [{ "color": "green", "value": null }]
+          }
         },
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["lastNotNull"],
-          "fields": ""
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }
       }
     },
     {
       "type": "row",
-      "title": "Queries",
+      "title": "Operations",
       "collapsed": false,
-      "id": 200,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 100,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "panels": []
     },
     {
-      "id": 5,
-      "title": "Query Rate by Command",
-      "description": "Rate of SELECT, INSERT, UPDATE, DELETE commands per second",
+      "id": 54,
+      "title": "Operations/s",
+      "description": "Rate of MongoDB operations per second (insert, query, update, delete, getmore, command)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(mysql_global_status_commands_total{instance=~\"$instance\",command=~\"select|insert|update|delete\"}[5m])",
-          "legendFormat": "{{command}}"
+          "expr": "rate(mongodb_ss_opcounters{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{type}}"
         }
       ],
       "fieldConfig": {
@@ -309,18 +257,18 @@
       }
     },
     {
-      "id": 6,
-      "title": "Slow Queries",
-      "description": "Rate of slow queries over time",
+      "id": 55,
+      "title": "Document Operations/s",
+      "description": "Rate of document-level operations per second (inserted, updated, deleted, returned)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(mysql_global_status_slow_queries{instance=~\"$instance\"}[5m])",
-          "legendFormat": "Slow Queries/s"
+          "expr": "rate(mongodb_ss_metrics_document{instance=~\"$instance\"}[5m])",
+          "legendFormat": "{{type}}"
         }
       ],
       "fieldConfig": {
@@ -329,8 +277,8 @@
             "drawStyle": "line",
             "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "fillOpacity": 20,
-            "gradientMode": "scheme",
+            "fillOpacity": 15,
+            "gradientMode": "none",
             "spanNulls": false,
             "showPoints": "never",
             "pointSize": 5,
@@ -338,15 +286,14 @@
             "axisPlacement": "auto",
             "axisLabel": "",
             "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "area" }
+            "thresholdsStyle": { "mode": "off" }
           },
-          "color": { "mode": "thresholds" },
+          "color": { "mode": "palette-classic" },
           "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.1 }
+              { "color": "green", "value": null }
             ]
           }
         },
@@ -361,29 +308,23 @@
       "type": "row",
       "title": "Connections",
       "collapsed": false,
-      "id": 300,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 200,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
       "panels": []
     },
     {
-      "id": 7,
-      "title": "Threads Connected vs Max",
-      "description": "Current connected threads compared to max_connections limit",
+      "id": 56,
+      "title": "Current Connections",
+      "description": "Number of currently active client connections per instance",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_status_threads_connected{instance=~\"$instance\"}",
-          "legendFormat": "Connected"
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_variables_max_connections{instance=~\"$instance\"}",
-          "legendFormat": "Max"
+          "expr": "mongodb_ss_connections{conn_type=\"current\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
         }
       ],
       "fieldConfig": {
@@ -392,7 +333,7 @@
             "drawStyle": "line",
             "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 15,
             "gradientMode": "none",
             "spanNulls": false,
             "showPoints": "never",
@@ -412,16 +353,7 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Max" },
-            "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
-              { "id": "custom.fillOpacity", "value": 0 },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "tooltip": { "mode": "multi", "sort": "desc" },
@@ -429,18 +361,18 @@
       }
     },
     {
-      "id": 8,
-      "title": "Connection Usage %",
-      "description": "Percentage of max_connections currently in use",
-      "type": "gauge",
+      "id": 57,
+      "title": "Available Connections",
+      "description": "Number of available connections remaining per instance",
+      "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_status_threads_connected{instance=~\"$instance\"} / mysql_global_variables_max_connections{instance=~\"$instance\"} * 100",
-          "legendFormat": "Usage %",
+          "expr": "mongodb_ss_connections{conn_type=\"available\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
           "instant": true
         }
       ],
@@ -449,16 +381,13 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "red", "value": 80 }
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "green", "value": 1000 }
             ]
           },
           "color": { "mode": "thresholds" },
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "decimals": 1,
+          "unit": "short",
           "noValue": "0"
         },
         "overrides": []
@@ -469,38 +398,83 @@
           "calcs": ["lastNotNull"],
           "fields": ""
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "orientation": "auto"
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto"
       }
     },
     {
       "type": "row",
-      "title": "InnoDB",
+      "title": "Memory",
       "collapsed": false,
-      "id": 400,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 300,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
       "panels": []
     },
     {
-      "id": 9,
-      "title": "InnoDB Buffer Pool",
-      "description": "Buffer pool data size vs total allocated buffer pool size",
+      "id": 58,
+      "title": "Memory Usage",
+      "description": "Resident memory usage of MongoDB process per instance (MB)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_status_innodb_buffer_pool_bytes_data{instance=~\"$instance\"}",
-          "legendFormat": "Data Size"
+          "expr": "mongodb_ss_mem_resident{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "color": { "mode": "palette-classic" },
+          "unit": "decmbytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
         },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 59,
+      "title": "Cache Usage",
+      "description": "WiredTiger cache bytes currently in use",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "mysql_global_variables_innodb_buffer_pool_size{instance=~\"$instance\"}",
-          "legendFormat": "Pool Size"
+          "expr": "mongodb_ss_wt_cache_bytes_currently_in_the_cache{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
         }
       ],
       "fieldConfig": {
@@ -529,16 +503,7 @@
             ]
           }
         },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "Pool Size" },
-            "properties": [
-              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
-              { "id": "custom.fillOpacity", "value": 0 },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "tooltip": { "mode": "multi", "sort": "desc" },
@@ -546,73 +511,25 @@
       }
     },
     {
-      "id": 10,
-      "title": "InnoDB Row Operations",
-      "description": "Rate of InnoDB row operations (read, inserted, updated, deleted)",
-      "type": "timeseries",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(mysql_global_status_innodb_row_ops_total{instance=~\"$instance\"}[5m])",
-          "legendFormat": "{{operation}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "showPoints": "never",
-            "pointSize": 5,
-            "stacking": { "mode": "none", "group": "A" },
-            "axisPlacement": "auto",
-            "axisLabel": "",
-            "scaleDistribution": { "type": "linear" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "color": { "mode": "palette-classic" },
-          "unit": "ops",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] }
-      }
-    },
-    {
       "type": "row",
       "title": "Logs",
       "collapsed": false,
-      "id": 500,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 400,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
       "panels": []
     },
     {
-      "id": 11,
-      "title": "MySQL Slow Query Log",
-      "description": "Slow query entries from MySQL journal logs",
+      "id": 60,
+      "title": "MongoDB Logs",
+      "description": "All MongoDB journal log entries",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 33 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 34 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"journal\", host=~\".*mysql.*\", unit=\"mysql.service\"} |= \"slow\"",
+          "expr": "{job=\"journal\", host=~\"dev-dojangkok-v2-mongodb.*\", service=\"mongodb\"}",
           "queryType": "range"
         }
       ],
@@ -628,17 +545,17 @@
       }
     },
     {
-      "id": 12,
-      "title": "MySQL General Log",
-      "description": "All MySQL journal log entries",
+      "id": 61,
+      "title": "Error Logs",
+      "description": "MongoDB error, exception, and fatal log entries",
       "type": "logs",
       "datasource": { "type": "loki", "uid": "loki" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 43 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 44 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"journal\", host=~\".*mysql.*\", unit=\"mysql.service\"}",
+          "expr": "{job=\"journal\", host=~\"dev-dojangkok-v2-mongodb.*\", service=\"mongodb\"} |~ \"(?i)error|exception|fatal\"",
           "queryType": "range"
         }
       ],

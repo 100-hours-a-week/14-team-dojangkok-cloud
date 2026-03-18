@@ -852,7 +852,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"docker\", host=~\".*be.*\", container=\"dojangkok-be\"}",
+          "expr": "{job=\"loki.source.kubernetes.pods\", namespace=\"dojangkok\", container=\"dojangkok-be\"}",
           "queryType": "range"
         }
       ],
@@ -878,7 +878,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"docker\", host=~\".*be.*\", container=\"dojangkok-be\"} |= \"ERROR\"",
+          "expr": "{job=\"loki.source.kubernetes.pods\", namespace=\"dojangkok\", container=\"dojangkok-be\"} |= \"ERROR\"",
           "queryType": "range"
         }
       ],

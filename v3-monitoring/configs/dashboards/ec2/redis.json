@@ -55,10 +55,185 @@
   "panels": [
     {
       "type": "row",
+      "title": "Cluster Health",
+      "collapsed": false,
+      "id": 50,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "id": 51,
+      "title": "Redis Nodes Online",
+      "description": "Number of Redis nodes currently UP",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(redis_up{instance=~\"dev-dojangkok-v2-redis-.*\"} == 1)",
+          "legendFormat": "Online",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 52,
+      "title": "Sentinel Nodes Online",
+      "description": "Number of Sentinel nodes currently UP",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(up{instance=~\"dev-dojangkok-v2-redis-sentinel-.*\", service=\"sentinel\"})",
+          "legendFormat": "Online",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 53,
+      "title": "Master Role",
+      "description": "Which Redis node currently holds the master role",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "redis_instance_info{role=\"master\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "noValue": "N/A"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto",
+        "textMode": "name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "id": 54,
+      "title": "Replication Offset",
+      "description": "Master replication offset over time per instance",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "redis_master_repl_offset{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "stacking": { "mode": "none", "group": "A" },
+            "axisPlacement": "auto",
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "type": "row",
       "title": "Status",
       "collapsed": false,
       "id": 100,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "panels": []
     },
     {
@@ -67,7 +242,7 @@
       "description": "Whether the Redis instance is reachable (1 = Up, 0 = Down)",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 7 },
       "targets": [
         {
           "refId": "A",
@@ -121,7 +296,7 @@
       "description": "Number of currently connected clients",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 7 },
       "targets": [
         {
           "refId": "A",
@@ -167,7 +342,7 @@
       "description": "Total memory used by the Redis instance",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 7 },
       "targets": [
         {
           "refId": "A",
@@ -213,7 +388,7 @@
       "description": "Keyspace hit rate percentage (hits / (hits + misses) * 100)",
       "type": "stat",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 7 },
       "targets": [
         {
           "refId": "A",
@@ -260,7 +435,7 @@
       "title": "Memory",
       "collapsed": false,
       "id": 200,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 },
       "panels": []
     },
     {
@@ -269,7 +444,7 @@
       "description": "Redis memory used vs max memory configured over time",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "targets": [
         {
           "refId": "A",
@@ -329,7 +504,7 @@
       "description": "Percentage of max memory currently in use",
       "type": "gauge",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "targets": [
         {
           "refId": "A",
@@ -373,7 +548,7 @@
       "title": "Performance",
       "collapsed": false,
       "id": 300,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
       "panels": []
     },
     {
@@ -382,7 +557,7 @@
       "description": "Rate of commands processed per second",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
       "targets": [
         {
           "refId": "A",
@@ -427,7 +602,7 @@
       "description": "Keyspace hit rate over time (hits / (hits + misses) * 100)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
       "targets": [
         {
           "refId": "A",
@@ -473,7 +648,7 @@
       "title": "Keys & Connections",
       "collapsed": false,
       "id": 400,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
       "panels": []
     },
     {
@@ -482,7 +657,7 @@
       "description": "Total number of keys across all databases",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
       "targets": [
         {
           "refId": "A",
@@ -527,7 +702,7 @@
       "description": "Number of connected clients over time",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
       "targets": [
         {
           "refId": "A",
@@ -572,7 +747,7 @@
       "description": "Number of clients blocked waiting on BLPOP, BRPOP, etc.",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
       "targets": [
         {
           "refId": "A",
@@ -617,7 +792,7 @@
       "title": "Network",
       "collapsed": false,
       "id": 500,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
       "panels": []
     },
     {
@@ -626,7 +801,7 @@
       "description": "Rate of bytes received and transmitted by Redis",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 33 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 39 },
       "targets": [
         {
           "refId": "A",

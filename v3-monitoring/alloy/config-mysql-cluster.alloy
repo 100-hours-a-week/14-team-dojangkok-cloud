@@ -1,0 +1,72 @@
+// =============================================================================
+// Grafana Alloy config — MySQL InnoDB Cluster (per-node)
+// Deploy: substitute INSTANCE_LABEL_PLACEHOLDER with node name
+//   e.g. dev-dojangkok-v2-mysql-2a
+// =============================================================================
+
+// --- Remote Write: Prometheus ---
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:9090/api/v1/write"
+  }
+}
+
+// --- Remote Write: Loki ---
+loki.write "default" {
+  endpoint {
+    url = "http://MONITOR_IP_PLACEHOLDER:3100/loki/api/v1/push"
+  }
+}
+
+// --- Relabel: set instance name ---
+prometheus.relabel "instance_label" {
+  forward_to = [prometheus.remote_write.default.receiver]
+  rule {
+    target_label = "instance"
+    replacement  = "INSTANCE_LABEL_PLACEHOLDER"
+  }
+  rule {
+    target_label = "service"
+    replacement  = "mysql"
+  }
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/unix"
+    target_label  = "job"
+    replacement   = "node"
+  }
+}
+
+// --- Node Exporter ---
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+}
+
+prometheus.scrape "node" {
+  targets         = prometheus.exporter.unix.node.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// --- systemd Journal Logs ---
+loki.source.journal "systemd" {
+  forward_to = [loki.write.default.receiver]
+  labels     = {
+    job     = "journal",
+    host    = "INSTANCE_LABEL_PLACEHOLDER",
+    service = "mysql",
+  }
+}
+
+// --- MySQL Exporter ---
+// Requires MYSQL_DSN environment variable, e.g. "exporter:password@(localhost:3306)/"
+prometheus.exporter.mysql "mysql" {
+  data_source_name = env("MYSQL_DSN")
+}
+
+prometheus.scrape "mysql" {
+  targets         = prometheus.exporter.mysql.mysql.targets
+  forward_to      = [prometheus.relabel.instance_label.receiver]
+  scrape_interval = "15s"
+}
