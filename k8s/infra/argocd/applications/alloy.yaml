@@ -120,6 +120,36 @@ spec:
                 job_name        = "kube-state-metrics"
               }
 
+              // ── kubelet cadvisor (container CPU/Memory/Network) ──
+              discovery.kubernetes "nodes" {
+                role = "node"
+              }
+
+              discovery.relabel "cadvisor" {
+                targets = discovery.kubernetes.nodes.targets
+
+                rule {
+                  replacement   = "/metrics/cadvisor"
+                  target_label  = "__metrics_path__"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_node_name"]
+                  target_label  = "node"
+                }
+              }
+
+              prometheus.scrape "cadvisor" {
+                targets         = discovery.relabel.cadvisor.output
+                forward_to      = [prometheus.remote_write.monitor.receiver]
+                scrape_interval = "30s"
+                job_name        = "cadvisor"
+                scheme          = "https"
+                bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                tls_config {
+                  insecure_skip_verify = true
+                }
+              }
+
               // ── Container Logs ──
               discovery.kubernetes "pod_logs" {
                 role = "pod"
