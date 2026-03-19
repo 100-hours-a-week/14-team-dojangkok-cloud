@@ -35,6 +35,12 @@
     group: ubuntu
     mode: "0644"
 
+- name: Set KUBECONFIG for root user
+  lineinfile:
+    path: /root/.bashrc
+    line: 'export KUBECONFIG=/home/ubuntu/.kube/config'
+    state: present
+
 - name: Generate join command (only when workers need to join)
   command: kubeadm token create --print-join-command --ttl=2h
   register: join_command
