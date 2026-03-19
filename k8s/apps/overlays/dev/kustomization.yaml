@@ -20,6 +20,6 @@ images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
   newTag: 3100f977d42c2fbdd9afafd8bd0d042951ef17f0
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
-  newTag: 2a8f62bbae987541c390a3fbc42c8fc0543b86a4
+  newTag: bc9257c4a46e561b9e43d33f9171c0b7d98d7cc7
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
   newTag: bd5ce6ca27d23e195011c64b51c66cccb2f57251
