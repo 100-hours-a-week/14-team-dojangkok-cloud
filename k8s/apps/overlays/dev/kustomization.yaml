@@ -9,7 +9,7 @@ resources:
 replicas:
 - count: 1
   name: backend
-- count: 2
+- count: 1
   name: frontend
 - count: 1
   name: chatting-be
