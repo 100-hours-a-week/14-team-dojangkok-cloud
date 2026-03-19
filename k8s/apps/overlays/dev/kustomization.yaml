@@ -7,12 +7,12 @@ resources:
 # base가 이미 dev 기본값이므로 최소한의 오버라이드만 정의.
 # CI에서 image tag를 업데이트할 때 이 섹션을 수정한다.
 replicas:
-- name: backend
-  count: 2
-- name: frontend
-  count: 2
-- name: chatting-be
-  count: 2
+- count: 2
+  name: backend
+- count: 2
+  name: frontend
+- count: 2
+  name: chatting-be
 
 images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
@@ -22,4 +22,4 @@ images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
   newTag: a6fe1ff462578d1c264a336c1e14f89c0ffbe62c
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
-  newTag: 543720da176c492b34c0af4abcf3bc0cc069f82e
+  newTag: e4da6d00c40e44ebadcba9f3b156c06c0ac16558
