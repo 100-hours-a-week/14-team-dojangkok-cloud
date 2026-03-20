@@ -54,6 +54,47 @@
     - /tmp/etcdctl
   when: etcdctl_check.rc != 0 or ('etcd Version: ' + etcd_version) not in (etcdctl_check.stdout | default(''))
 
+# --- AWS CLI 설치 (S3 업로드용) ---
+
+- name: Check if AWS CLI is installed
+  command: /usr/local/bin/aws --version
+  register: awscli_check
+  changed_when: false
+  failed_when: false
+
+- name: Install unzip (AWS CLI 설치에 필요)
+  apt:
+    name: unzip
+    state: present
+  when: awscli_check.rc != 0
+
+- name: Download AWS CLI v2 (arm64)
+  get_url:
+    url: https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip
+    dest: /tmp/awscli-exe-linux-aarch64.zip
+    mode: "0644"
+  when: awscli_check.rc != 0
+
+- name: Extract AWS CLI installer
+  unarchive:
+    src: /tmp/awscli-exe-linux-aarch64.zip
+    dest: /tmp
+    remote_src: true
+  when: awscli_check.rc != 0
+
+- name: Install AWS CLI
+  command: /tmp/aws/install
+  when: awscli_check.rc != 0
+
+- name: Clean up AWS CLI download
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/awscli-exe-linux-aarch64.zip
+    - /tmp/aws
+  when: awscli_check.rc != 0
+
 # --- 로컬 백업 디렉토리 ---
 
 - name: Create local backup directory
