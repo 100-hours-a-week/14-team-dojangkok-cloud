@@ -6,9 +6,8 @@ resources:
 
 # base가 이미 dev 기본값이므로 최소한의 오버라이드만 정의.
 # CI에서 image tag를 업데이트할 때 이 섹션을 수정한다.
+# backend, ai-server는 HPA가 replicas를 관리하므로 여기서 제외
 replicas:
-- count: 1
-  name: backend
 - count: 1
   name: frontend
 - count: 1
