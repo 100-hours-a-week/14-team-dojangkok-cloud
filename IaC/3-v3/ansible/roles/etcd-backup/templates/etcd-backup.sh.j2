@@ -1,0 +1,58 @@
+#!/bin/bash
+# ============================================================
+# etcd 스냅샷 백업 → S3 업로드
+# Managed by Ansible — do not edit manually
+# ============================================================
+
+set -euo pipefail
+
+BACKUP_DIR="{{ etcd_backup_local_dir }}"
+BUCKET="{{ etcd_backup_bucket }}"
+REGION="{{ etcd_backup_region }}"
+RETAIN={{ etcd_backup_local_retain }}
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+HOSTNAME=$(hostname)
+SNAPSHOT="${BACKUP_DIR}/etcd-snapshot-${TIMESTAMP}.db"
+
+ETCD_CERT="/etc/kubernetes/pki/etcd/server.crt"
+ETCD_KEY="/etc/kubernetes/pki/etcd/server.key"
+ETCD_CACERT="/etc/kubernetes/pki/etcd/ca.crt"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+
+# 1. 스냅샷 생성
+log "Taking etcd snapshot → ${SNAPSHOT}"
+etcdctl snapshot save "${SNAPSHOT}" \
+  --endpoints=https://127.0.0.1:2379 \
+  --cert="${ETCD_CERT}" \
+  --key="${ETCD_KEY}" \
+  --cacert="${ETCD_CACERT}"
+
+# 2. 무결성 검증
+log "Verifying snapshot integrity"
+etcdctl snapshot status "${SNAPSHOT}" \
+  --cert="${ETCD_CERT}" \
+  --key="${ETCD_KEY}" \
+  --cacert="${ETCD_CACERT}" \
+  --write-out=table
+
+FILESIZE=$(stat -c%s "${SNAPSHOT}")
+if [ "${FILESIZE}" -lt 1024 ]; then
+  log "ERROR: Snapshot too small (${FILESIZE} bytes), aborting"
+  rm -f "${SNAPSHOT}"
+  exit 1
+fi
+log "Snapshot size: ${FILESIZE} bytes"
+
+# 3. S3 업로드
+S3_KEY="snapshots/${HOSTNAME}/${TIMESTAMP}.db"
+log "Uploading to s3://${BUCKET}/${S3_KEY}"
+aws s3 cp "${SNAPSHOT}" "s3://${BUCKET}/${S3_KEY}" --region "${REGION}"
+log "Upload complete"
+
+# 4. 로컬 오래된 스냅샷 정리 (최근 N개만 유지)
+log "Cleaning local snapshots (retaining latest ${RETAIN})"
+ls -1t "${BACKUP_DIR}"/etcd-snapshot-*.db 2>/dev/null | tail -n +$((RETAIN + 1)) | xargs -r rm -f
+
+log "Backup finished successfully"

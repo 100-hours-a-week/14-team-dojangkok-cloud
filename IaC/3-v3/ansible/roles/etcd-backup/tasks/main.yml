@@ -1,0 +1,110 @@
+# ============================================================
+# V3 K8S Ansible — etcd 스냅샷 백업 자동화
+# CP 노드에서만 실행 (stacked etcd)
+# ============================================================
+
+- name: Check if this is a control plane node
+  stat:
+    path: /etc/kubernetes/pki/etcd/ca.crt
+  register: etcd_ca_cert
+
+- name: Skip if not control plane
+  meta: end_host
+  when: not etcd_ca_cert.stat.exists
+
+# --- etcdctl 설치 ---
+
+- name: Check etcdctl version
+  command: /usr/local/bin/etcdctl version
+  register: etcdctl_check
+  changed_when: false
+  failed_when: false
+
+- name: Download etcdctl (arm64)
+  get_url:
+    url: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-arm64.tar.gz"
+    dest: /tmp/etcd-v{{ etcd_version }}-linux-arm64.tar.gz
+    mode: "0644"
+  when: etcdctl_check.rc != 0 or ('etcd Version: ' + etcd_version) not in (etcdctl_check.stdout | default(''))
+
+- name: Extract etcdctl binary
+  unarchive:
+    src: /tmp/etcd-v{{ etcd_version }}-linux-arm64.tar.gz
+    dest: /tmp
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+      - etcd-v{{ etcd_version }}-linux-arm64/etcdctl
+  when: etcdctl_check.rc != 0 or ('etcd Version: ' + etcd_version) not in (etcdctl_check.stdout | default(''))
+
+- name: Install etcdctl to /usr/local/bin
+  copy:
+    src: /tmp/etcdctl
+    dest: /usr/local/bin/etcdctl
+    mode: "0755"
+    remote_src: true
+  when: etcdctl_check.rc != 0 or ('etcd Version: ' + etcd_version) not in (etcdctl_check.stdout | default(''))
+
+- name: Clean up etcdctl download
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/etcd-v{{ etcd_version }}-linux-arm64.tar.gz
+    - /tmp/etcdctl
+  when: etcdctl_check.rc != 0 or ('etcd Version: ' + etcd_version) not in (etcdctl_check.stdout | default(''))
+
+# --- 로컬 백업 디렉토리 ---
+
+- name: Create local backup directory
+  file:
+    path: "{{ etcd_backup_local_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# --- 스크립트 + systemd 배포 ---
+
+- name: Deploy etcd backup script
+  template:
+    src: etcd-backup.sh.j2
+    dest: /usr/local/bin/etcd-backup.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy etcd-backup systemd service
+  template:
+    src: etcd-backup.service.j2
+    dest: /etc/systemd/system/etcd-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy etcd-backup systemd timer
+  template:
+    src: etcd-backup.timer.j2
+    dest: /etc/systemd/system/etcd-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers
+  meta: flush_handlers
+
+- name: Enable and start etcd-backup timer
+  systemd:
+    name: etcd-backup.timer
+    enabled: true
+    state: started
+
+# --- 검증 ---
+
+- name: Verify etcd-backup timer is active
+  command: systemctl is-active etcd-backup.timer
+  register: timer_status
+  changed_when: false
+  failed_when: timer_status.stdout != "active"

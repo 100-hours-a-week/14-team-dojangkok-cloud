@@ -40,3 +40,4 @@
     - gateway-fabric
     - external-secrets
     - argocd
+    - etcd-backup

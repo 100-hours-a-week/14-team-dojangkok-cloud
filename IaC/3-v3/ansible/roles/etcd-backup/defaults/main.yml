@@ -1,0 +1,10 @@
+# ============================================================
+# V3 K8S Ansible — etcd-backup 기본 변수
+# ============================================================
+
+etcd_version: "3.5.15"
+etcd_backup_bucket: "dojangkok-v3-etcd-backup"
+etcd_backup_interval: "6h"
+etcd_backup_local_dir: "/var/lib/etcd-backup"
+etcd_backup_local_retain: 2
+etcd_backup_region: "ap-northeast-2"

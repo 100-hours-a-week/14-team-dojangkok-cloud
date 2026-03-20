@@ -1,0 +1,12 @@
+# Managed by Ansible — do not edit manually
+[Unit]
+Description=etcd backup timer (every {{ etcd_backup_interval }})
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec={{ etcd_backup_interval }}
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

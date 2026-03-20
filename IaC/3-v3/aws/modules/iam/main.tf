@@ -152,3 +152,27 @@ resource "aws_iam_role_policy" "app_s3" {
     }]
   })
 }
+
+# --- S3 for etcd backup snapshots ---
+
+resource "aws_iam_role_policy" "etcd_backup_s3" {
+  name = "etcd-backup-s3"
+  role = aws_iam_role.k8s_node.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:DeleteObject"
+      ]
+      Resource = [
+        "arn:aws:s3:::dojangkok-v3-etcd-backup",
+        "arn:aws:s3:::dojangkok-v3-etcd-backup/*"
+      ]
+    }]
+  })
+}

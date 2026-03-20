@@ -330,3 +330,48 @@ module "alb" {
 
   security_group_ids = [module.security_groups.security_group_ids["alb"]]
 }
+
+# ============================================================
+# 7. S3 — etcd 스냅샷 백업 버킷
+# ============================================================
+
+resource "aws_s3_bucket" "etcd_backup" {
+  bucket = "dojangkok-v3-etcd-backup"
+  tags   = merge(local.common_tags, { Name = "dojangkok-v3-etcd-backup" })
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "etcd_backup" {
+  bucket = aws_s3_bucket.etcd_backup.id
+
+  rule {
+    id     = "expire-old-snapshots"
+    status = "Enabled"
+
+    filter {
+      prefix = "snapshots/"
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "etcd_backup" {
+  bucket = aws_s3_bucket.etcd_backup.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "etcd_backup" {
+  bucket = aws_s3_bucket.etcd_backup.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
