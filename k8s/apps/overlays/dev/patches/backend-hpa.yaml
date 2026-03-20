@@ -4,5 +4,5 @@ metadata:
   name: backend-hpa
   namespace: dojangkok
 spec:
-  minReplicas: 1
-  maxReplicas: 3
+  minReplicas: 4
+  maxReplicas: 4
