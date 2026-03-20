@@ -24,4 +24,4 @@ images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
   newTag: c077c99311fcd1025743587d70f7a8d722744450
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-fe
-  newTag: 9dd5e0327036d9698e3bbbf603ae154951a68b19
+  newTag: 318d8a08a38693ef9fea7cb13fd57eb80e093c42
