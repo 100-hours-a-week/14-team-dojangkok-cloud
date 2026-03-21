@@ -18,7 +18,7 @@ replicas:
 
 images:
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-ai
-  newTag: ade8e9bf70d02f11650ca21489540bb9c7e9b0c3
+  newTag: 426b41fc459eadd516bf880071be1b317fac276b
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-be
   newTag: 3100f977d42c2fbdd9afafd8bd0d042951ef17f0
 - name: 662505429975.dkr.ecr.ap-northeast-2.amazonaws.com/dev-dojangkok-chatting-be
