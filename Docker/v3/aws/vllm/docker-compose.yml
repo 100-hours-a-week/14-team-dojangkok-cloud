@@ -1,0 +1,66 @@
+# vLLM + 모니터링 스택 (AWS GPU EC2 — g6e.xlarge, L40S 48GB)
+# EXAONE-3.5-7.8B-Instruct bf16, RunPod 동일 파라미터
+#
+# 사용법:
+#   1. setup.sh 실행 (NVIDIA 드라이버, Docker, 모델 다운로드)
+#   2. .env 파일 작성 (.env.example 참고)
+#   3. docker compose up -d
+
+services:
+  vllm:
+    image: vllm/vllm-openai:v0.15.1
+    container_name: vllm
+    network_mode: host
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      HF_HOME: /model-cache
+      HF_HUB_OFFLINE: "1"
+      NVIDIA_VISIBLE_DEVICES: all
+      VLLM_API_KEY: ${VLLM_API_KEY}
+    volumes:
+      - /opt/models:/model-cache
+    command:
+      - --host=0.0.0.0
+      - --port=8000
+      - --model=LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct
+      - --revision=0ff6b5ec7c13b049b253a16a889aa269e6b79a94
+      - --trust-remote-code
+      - --enforce-eager
+      - --gpu-memory-utilization=0.90
+      - --max-num-seqs=128
+      - --max-model-len=32768
+      - --api-key=${VLLM_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.0
+    container_name: node-exporter
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    restart: unless-stopped
+    # port 9100 (host network)
+
+  # dcgm-exporter 제외: SYS_ADMIN 권한 없이 L40S 프로파일링 메트릭 수집 불가
+  # GPU 메트릭은 vLLM /metrics 엔드포인트에서 수집 가능

@@ -20,7 +20,7 @@ data:
   CORPUS_JSONL_PATH: "corpus_data/corpus.jsonl"
 
   # --- vLLM ---
-  VLLM_BASE_URL: "http://63.141.33.33:22140/v1"
+  VLLM_BASE_URL: "http://vllm.internal.dev.dojangkok.cloud:8000/v1"
   VLLM_MODEL: "LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct"
   VLLM_LORA_ADAPTER_CHECKLIST: "checklist"
   VLLM_LORA_ADAPTER_EASYCONTRACT: "easycontract"
