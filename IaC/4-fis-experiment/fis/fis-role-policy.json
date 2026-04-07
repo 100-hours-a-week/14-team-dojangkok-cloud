@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:920624925547:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/k8s:cluster-name": "fis-exp"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

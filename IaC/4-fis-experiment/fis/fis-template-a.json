@@ -1,0 +1,31 @@
+{
+  "description": "Exp-A: Worker 2c stop 15min (baseline)",
+  "targets": {
+    "worker-2c": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "k8s:cluster-name": "fis-exp",
+        "k8s:role": "worker",
+        "Name": "fis-exp-w-2c-1"
+      },
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "stop-worker-2c": {
+      "actionId": "aws:ec2:stop-instances",
+      "parameters": {
+        "startInstancesAfterDuration": "PT15M"
+      },
+      "targets": {
+        "Instances": "worker-2c"
+      }
+    }
+  },
+  "stopConditions": [],
+  "roleArn": "REPLACE_WITH_FIS_ROLE_ARN",
+  "tags": {
+    "Project": "dojangkok",
+    "Experiment": "fis-exp-a"
+  }
+}
