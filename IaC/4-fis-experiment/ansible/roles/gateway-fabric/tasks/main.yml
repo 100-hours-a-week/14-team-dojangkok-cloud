@@ -1,0 +1,20 @@
+# NGINX Gateway Fabric — DaemonSet, NodePort 30080 (V3 동일)
+
+- name: Install Gateway API CRDs
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f
+    https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+  register: gateway_api_result
+  changed_when: "'created' in gateway_api_result.stdout"
+
+- name: Install NGINX Gateway Fabric
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    upgrade --install nginx-gateway
+    oci://ghcr.io/nginx/charts/nginx-gateway-fabric
+    --namespace nginx-gateway --create-namespace
+    --set nginx.kind=daemonSet
+    --set nginx.service.type=NodePort
+    --set-json 'nginx.service.nodePorts=[{"port":{{ gateway_nodeport_http }},"listenerPort":80}]'
+  register: ngf_install
+  changed_when: "'deployed' in ngf_install.stdout or 'upgraded' in ngf_install.stdout"

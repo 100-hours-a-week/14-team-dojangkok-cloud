@@ -1,0 +1,39 @@
+# ECR Credential Provider (V3 동일)
+
+- name: Download ecr-credential-provider binary
+  get_url:
+    url: "https://artifacts.k8s.io/binaries/cloud-provider-aws/v{{ ecr_credential_provider_version }}/linux/arm64/ecr-credential-provider-linux-arm64"
+    dest: /usr/local/bin/ecr-credential-provider
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create credential provider config directory
+  file:
+    path: /etc/kubernetes
+    state: directory
+    mode: "0755"
+
+- name: Write credential provider config
+  copy:
+    dest: /etc/kubernetes/ecr-credential-provider-config.yaml
+    mode: "0644"
+    content: |
+      apiVersion: kubelet.config.k8s.io/v1
+      kind: CredentialProviderConfig
+      providers:
+        - name: ecr-credential-provider
+          matchImages:
+            - "*.dkr.ecr.*.amazonaws.com"
+            - "*.dkr.ecr.*.amazonaws.com.cn"
+            - "*.dkr.ecr-fips.*.amazonaws.com"
+          defaultCacheDuration: "12h"
+          apiVersion: credentialprovider.kubelet.k8s.io/v1
+
+- name: Configure kubelet extra args (resolv-conf + credential provider)
+  copy:
+    dest: /etc/default/kubelet
+    mode: "0644"
+    content: |
+      KUBELET_EXTRA_ARGS=--resolv-conf=/run/systemd/resolve/resolv.conf --image-credential-provider-config=/etc/kubernetes/ecr-credential-provider-config.yaml --image-credential-provider-bin-dir=/usr/local/bin
+  notify: restart kubelet

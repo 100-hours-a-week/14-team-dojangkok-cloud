@@ -1,0 +1,40 @@
+# ArgoCD 설치 (실험 C: HPA vs auto-sync 용)
+# V3 대비: Application CR은 실험 시 수동 생성
+
+- name: Add ArgoCD Helm repository
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    repo add argo https://argoproj.github.io/argo-helm
+  register: repo_add
+  changed_when: "'has been added' in repo_add.stdout"
+  failed_when: false
+
+- name: Update Helm repositories
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config repo update
+  changed_when: false
+
+- name: Install ArgoCD
+  command: >
+    helm --kubeconfig=/home/ubuntu/.kube/config
+    upgrade --install argocd argo/argo-cd
+    --namespace argocd --create-namespace
+    --set server.service.type=ClusterIP
+    --set dex.enabled=false
+    --set notifications.enabled=false
+    --set applicationSet.enabled=false
+    --set server.resources.requests.cpu=50m
+    --set server.resources.requests.memory=128Mi
+    --set controller.resources.requests.cpu=100m
+    --set controller.resources.requests.memory=128Mi
+    --set repoServer.resources.requests.cpu=50m
+    --set repoServer.resources.requests.memory=128Mi
+  register: argocd_install
+  changed_when: "'deployed' in argocd_install.stdout or 'upgraded' in argocd_install.stdout"
+
+- name: Wait for ArgoCD server to be ready
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/argocd-server
+    -n argocd --timeout=120s
+  changed_when: false

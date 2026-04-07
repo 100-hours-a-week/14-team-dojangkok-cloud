@@ -1,0 +1,15 @@
+# TF output에서 생성 (scripts/02-generate-inventory.sh)
+# 아래는 예시
+
+[control_plane]
+cp ansible_host=<CP_PUBLIC_IP> private_ip=<CP_PRIVATE_IP>
+
+[workers]
+w-2a-1 ansible_host=<W2A_PUBLIC_IP> private_ip=<W2A_PRIVATE_IP> node_az=ap-northeast-2a
+w-2b-1 ansible_host=<W2B_PUBLIC_IP> private_ip=<W2B_PRIVATE_IP> node_az=ap-northeast-2b
+w-2c-1 ansible_host=<W2C_PUBLIC_IP> private_ip=<W2C_PRIVATE_IP> node_az=ap-northeast-2c
+
+[all:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/dojangkok-key.pem
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'

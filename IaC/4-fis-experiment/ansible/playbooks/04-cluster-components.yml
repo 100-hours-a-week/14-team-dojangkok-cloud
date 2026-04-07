@@ -1,0 +1,10 @@
+- name: "Phase 4: Install cluster components"
+  hosts: control_plane
+  become: true
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
+  roles:
+    - calico
+    - coredns-config
+    - gateway-fabric
+    - argocd

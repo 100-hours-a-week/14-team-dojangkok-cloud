@@ -1,0 +1,37 @@
+# FIS 실험 — 전체 클러스터 부트스트랩
+
+# Phase 1: 전체 노드 공통 설정
+- name: Common setup (all nodes)
+  hosts: all
+  become: true
+  roles:
+    - common
+    - containerd
+    - kubeadm-prereqs
+    - ecr-credential-provider
+
+# Phase 2: Control Plane 초기화
+- name: Initialize Control Plane
+  hosts: control_plane
+  become: true
+  roles:
+    - kubeadm-init
+
+# Phase 3: Worker 노드 Join
+- name: Join Worker nodes
+  hosts: workers
+  become: true
+  roles:
+    - kubeadm-join
+
+# Phase 4: CNI + 클러스터 컴포넌트 (CP에서 실행)
+- name: Install cluster components
+  hosts: control_plane
+  become: true
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
+  roles:
+    - calico
+    - coredns-config
+    - gateway-fabric
+    - argocd

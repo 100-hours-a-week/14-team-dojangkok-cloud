@@ -1,0 +1,24 @@
+# CoreDNS forward — VPC DNS Resolver
+# Ubuntu systemd-resolved 환경 대응 (V3 동일)
+# V4 VPC DNS: 10.0.0.2
+
+- name: Patch CoreDNS ConfigMap — forward to VPC DNS Resolver
+  shell: |
+    kubectl --kubeconfig=/home/ubuntu/.kube/config get configmap coredns -n kube-system -o json \
+      | jq '.data.Corefile = (.data.Corefile | gsub("forward \\. /etc/resolv\\.conf"; "forward . 10.0.0.2"))' \
+      | kubectl --kubeconfig=/home/ubuntu/.kube/config apply -f -
+  register: coredns_patch
+  changed_when: "'configured' in coredns_patch.stdout"
+
+- name: Restart CoreDNS
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout restart deployment/coredns -n kube-system
+  changed_when: true
+
+- name: Wait for CoreDNS rollout
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    rollout status deployment/coredns
+    -n kube-system --timeout=60s
+  changed_when: false

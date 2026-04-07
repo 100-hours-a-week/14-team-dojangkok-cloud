@@ -1,0 +1,5 @@
+- name: "Phase 2: Initialize Control Plane"
+  hosts: control_plane
+  become: true
+  roles:
+    - kubeadm-init

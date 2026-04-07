@@ -1,0 +1,15 @@
+# FIS 실험 환경 — K8S 클러스터 변수
+
+k8s_version: "1.31"
+k8s_minor: "1.31.0"
+
+pod_cidr: "192.168.0.0/16"
+service_cidr: "10.96.0.0/12"
+calico_vxlan_mtu: 8951
+
+gateway_nodeport_http: 30080
+
+containerd_version: "1.7"
+ecr_credential_provider_version: "1.31.0"
+
+cluster_name: "fis-exp"

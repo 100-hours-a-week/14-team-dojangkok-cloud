@@ -1,0 +1,41 @@
+# Calico CNI — Tigera Operator, VXLAN (V3 동일)
+
+- name: Install Tigera Operator
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply --server-side --force-conflicts -f
+    https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
+  register: tigera_result
+  changed_when: "'configured' in tigera_result.stdout or 'created' in tigera_result.stdout"
+
+- name: Apply Calico custom resource
+  copy:
+    content: |
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        calicoNetwork:
+          bgp: Disabled
+          ipPools:
+            - cidr: "{{ pod_cidr }}"
+              encapsulation: VXLAN
+              natOutgoing: Enabled
+          mtu: {{ calico_vxlan_mtu }}
+    dest: /tmp/calico-installation.yaml
+
+- name: Apply Calico installation
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    apply -f /tmp/calico-installation.yaml
+
+- name: Wait for Calico pods to be ready
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    wait --for=condition=Ready pods
+    --all -n calico-system
+    --timeout=50s
+  retries: 10
+  delay: 15
+  register: calico_ready
+  until: calico_ready.rc == 0

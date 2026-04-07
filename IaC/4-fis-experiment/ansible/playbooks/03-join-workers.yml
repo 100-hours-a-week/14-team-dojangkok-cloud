@@ -1,0 +1,5 @@
+- name: "Phase 3: Join Worker nodes"
+  hosts: workers
+  become: true
+  roles:
+    - kubeadm-join
