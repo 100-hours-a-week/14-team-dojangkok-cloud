@@ -1,0 +1,21 @@
+region         = "ap-northeast-2"
+aws_profile    = "default"
+project_name   = "fis-exp"
+cluster_name   = "fis-exp"
+
+# 기존 V4 VPC (920624925547)
+vpc_id         = "vpc-01300a19edfeff324"
+vpc_cidr       = "10.0.0.0/24"
+igw_id         = ""  # TODO: terraform apply 전 확인 필요
+secondary_cidr = "10.1.0.0/16"
+
+# data 인스턴스 SG
+data_security_group_id = ""  # TODO: aws ec2 describe-instances로 확인
+
+# EC2
+key_pair_name   = "dojangkok-key"
+instance_type   = "t4g.medium"
+ssh_allowed_cidr = "0.0.0.0/0"  # TODO: 본인 IP로 제한 권장
+
+# Gateway
+gateway_nodeport = 30080
