@@ -1,0 +1,12 @@
+# proxy_next_upstream: stale upstream 즉시 retry
+# 실험 A 결과에서 stale 구간 에러가 클 경우 적용
+apiVersion: gateway.nginx.org/v1alpha2
+kind: NginxProxy
+metadata:
+  name: dojangkok-proxy
+  namespace: dojangkok
+spec:
+  telemetry:
+    exporter: {}
+  # upstream 에러/타임아웃 시 다음 upstream으로 retry
+  # TODO: NGF 버전에 따라 spec 확인 필요
