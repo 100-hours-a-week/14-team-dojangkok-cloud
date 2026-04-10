@@ -80,13 +80,39 @@ resource "aws_security_group_rule" "alb_to_worker_nodeport" {
   security_group_id        = module.security_groups.sg_ids["k8s-worker"]
 }
 
+# --- S3 (etcd backup) ---
+
+resource "aws_s3_bucket" "etcd_backup" {
+  bucket = "fis-exp-etcd-backup"
+  tags   = local.common_tags
+}
+
+resource "aws_s3_bucket" "ansible_ssm" {
+  bucket = "fis-exp-ansible-ssm"
+  tags   = local.common_tags
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "etcd_backup" {
+  bucket = aws_s3_bucket.etcd_backup.id
+
+  rule {
+    id     = "expire-7d"
+    status = "Enabled"
+    expiration {
+      days = 7
+    }
+  }
+}
+
 # --- IAM ---
 
 module "iam" {
   source = "./modules/iam"
 
-  project_name = var.project_name
-  common_tags  = local.common_tags
+  project_name       = var.project_name
+  etcd_backup_bucket = aws_s3_bucket.etcd_backup.id
+  ansible_ssm_bucket = aws_s3_bucket.ansible_ssm.id
+  common_tags        = local.common_tags
 }
 
 # --- K8S Nodes ---

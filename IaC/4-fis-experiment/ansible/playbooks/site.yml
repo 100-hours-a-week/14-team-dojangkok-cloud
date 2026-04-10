@@ -12,26 +12,29 @@
 
 # Phase 2: Control Plane 초기화
 - name: Initialize Control Plane
-  hosts: control_plane
+  hosts: role_control_plane
   become: true
   roles:
     - kubeadm-init
 
 # Phase 3: Worker 노드 Join
 - name: Join Worker nodes
-  hosts: workers
+  hosts: role_worker
   become: true
   roles:
     - kubeadm-join
 
 # Phase 4: CNI + 클러스터 컴포넌트 (CP에서 실행)
 - name: Install cluster components
-  hosts: control_plane
+  hosts: role_control_plane
   become: true
   environment:
     KUBECONFIG: /home/ubuntu/.kube/config
   roles:
     - calico
     - coredns-config
+    - ebs-csi
     - gateway-fabric
+    - external-secrets
     - argocd
+    - etcd-backup

@@ -1,0 +1,29 @@
+# FIS 실험 — Dynamic Inventory (AWS EC2 plugin)
+# k8s:cluster-name=fis-exp 태그로 노드 자동 인식
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - ap-northeast-2
+
+filters:
+  "tag:k8s:cluster-name": "fis-exp"
+  instance-state-name: running
+
+keyed_groups:
+  - key: tags['k8s:role'] | default('unknown')
+    prefix: role
+    separator: "_"
+
+hostnames:
+  - instance-id
+
+compose:
+  ansible_host: instance_id
+  ansible_connection: "'aws_ssm'"
+  ansible_aws_ssm_region: "'ap-northeast-2'"
+  ansible_aws_ssm_bucket_name: "'fis-exp-ansible-ssm'"
+  ansible_aws_ssm_timeout: 360
+  ansible_user: ubuntu
+  k8s_role: tags['k8s:role']
+  node_az: placement.availability_zone
+  private_ip: private_ip_address

@@ -1,0 +1,32 @@
+# ============================================================
+# V3 K8S Ansible — EBS CSI Driver + StorageClass
+# Branch: feat/v3-k8s-iac
+# ============================================================
+
+- name: Deploy EBS CSI Driver
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config apply -k
+    "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.37"
+  register: ebs_csi_result
+  changed_when: "'created' in ebs_csi_result.stdout or 'configured' in ebs_csi_result.stdout"
+
+- name: Create gp3 StorageClass
+  copy:
+    content: |
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: gp3
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: ebs.csi.aws.com
+      parameters:
+        type: gp3
+      volumeBindingMode: WaitForFirstConsumer
+      reclaimPolicy: Retain
+    dest: /tmp/storageclass-gp3.yaml
+
+- name: Apply StorageClass
+  command: >
+    kubectl --kubeconfig=/home/ubuntu/.kube/config
+    apply -f /tmp/storageclass-gp3.yaml

@@ -3,9 +3,17 @@ name: "Ansible V3 K8S"
 on:
   pull_request:
     branches: [main]
-    paths: ["IaC/3-v3/ansible/**"]
+    paths: ["IaC/3-v3/ansible/**", "IaC/4-fis-experiment/ansible/**"]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "실행 환경"
+        required: true
+        type: choice
+        options:
+          - v3
+          - fis-experiment
+        default: fis-experiment
       action:
         description: "실행할 작업"
         required: true
@@ -29,7 +37,7 @@ permissions:
 
 env:
   AWS_REGION: "ap-northeast-2"
-  ANSIBLE_DIR: "IaC/3-v3/ansible"
+  ANSIBLE_DIR: ${{ inputs.environment == 'fis-experiment' && 'IaC/4-fis-experiment/ansible' || 'IaC/3-v3/ansible' }}
 
 jobs:
   # ──────────────────────────────────────────────

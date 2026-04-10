@@ -3,9 +3,17 @@ name: "Terraform V3 K8S"
 on:
   pull_request:
     branches: [main]
-    paths: ["IaC/3-v3/aws/**"]
+    paths: ["IaC/3-v3/aws/**", "IaC/4-fis-experiment/terraform/**"]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "실행 환경"
+        required: true
+        type: choice
+        options:
+          - v3
+          - fis-experiment
+        default: fis-experiment
       action:
         description: "실행할 Terraform 작업"
         required: true
@@ -30,7 +38,7 @@ permissions:
 
 env:
   TF_VERSION: "1.14.6"
-  WORKING_DIR: "IaC/3-v3/aws/environments/k8s-dev"
+  WORKING_DIR: ${{ inputs.environment == 'fis-experiment' && 'IaC/4-fis-experiment/terraform' || 'IaC/3-v3/aws/environments/k8s-dev' }}
   AWS_REGION: "ap-northeast-2"
 
 jobs:
@@ -66,9 +74,16 @@ jobs:
         working-directory: IaC/3-v3/aws
         continue-on-error: true
 
-      - name: Terraform Init
-        id: init
+      - name: Terraform Init (v3)
+        id: init-v3
+        if: inputs.environment != 'fis-experiment'
         run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Init (fis-experiment)
+        id: init-fis
+        if: inputs.environment == 'fis-experiment'
+        run: terraform init -input=false
         working-directory: ${{ env.WORKING_DIR }}
 
       - name: Terraform Validate
@@ -83,9 +98,12 @@ jobs:
           if [ "${{ inputs.action }}" = "destroy" ]; then
             DESTROY_FLAG="-destroy"
           fi
+          VAR_FLAGS=""
+          if [ "${{ inputs.environment }}" != "fis-experiment" ]; then
+            VAR_FLAGS="-var=vpc_id=${{ secrets.K8S_DEV_VPC_ID }} -var=ssl_certificate_arn=${{ secrets.K8S_DEV_SSL_CERT_ARN }}"
+          fi
           terraform plan \
-            -var="vpc_id=${{ secrets.K8S_DEV_VPC_ID }}" \
-            -var="ssl_certificate_arn=${{ secrets.K8S_DEV_SSL_CERT_ARN }}" \
+            $VAR_FLAGS \
             $DESTROY_FLAG \
             -input=false -no-color -detailed-exitcode -out=tfplan \
             2>&1 | tee plan_output.txt
@@ -171,8 +189,14 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: Terraform Init
+      - name: Terraform Init (v3)
+        if: inputs.environment != 'fis-experiment'
         run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Init (fis-experiment)
+        if: inputs.environment == 'fis-experiment'
+        run: terraform init -input=false
         working-directory: ${{ env.WORKING_DIR }}
 
       - uses: actions/download-artifact@v4
@@ -214,8 +238,14 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: Terraform Init
+      - name: Terraform Init (v3)
+        if: inputs.environment != 'fis-experiment'
         run: terraform init -backend-config=backend.hcl -backend-config="profile=" -input=false
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: Terraform Init (fis-experiment)
+        if: inputs.environment == 'fis-experiment'
+        run: terraform init -input=false
         working-directory: ${{ env.WORKING_DIR }}
 
       - uses: actions/download-artifact@v4
