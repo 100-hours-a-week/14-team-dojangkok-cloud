@@ -61,7 +61,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          role-to-assume: ${{ inputs.environment == 'fis-experiment' && secrets.FIS_TF_AWS_ROLE_ARN || secrets.TF_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
@@ -183,7 +183,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          role-to-assume: ${{ inputs.environment == 'fis-experiment' && secrets.FIS_TF_AWS_ROLE_ARN || secrets.TF_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
@@ -232,7 +232,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.TF_AWS_ROLE_ARN }}
+          role-to-assume: ${{ inputs.environment == 'fis-experiment' && secrets.FIS_TF_AWS_ROLE_ARN || secrets.TF_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3

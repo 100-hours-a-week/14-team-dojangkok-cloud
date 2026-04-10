@@ -117,7 +117,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.ANSIBLE_AWS_ROLE_ARN }}
+          role-to-assume: ${{ inputs.environment == 'fis-experiment' && secrets.FIS_ANSIBLE_AWS_ROLE_ARN || secrets.ANSIBLE_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install Ansible + dependencies
