@@ -8,7 +8,11 @@ terraform {
     }
   }
 
-  # 임시 실험 환경 — local backend (S3 불필요)
+  backend "s3" {
+    bucket  = "fis-exp-terraform-state"
+    key     = "fis-experiment/terraform.tfstate"
+    region  = "ap-northeast-2"
+  }
 }
 
 provider "aws" {

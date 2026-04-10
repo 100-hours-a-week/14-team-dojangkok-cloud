@@ -83,7 +83,7 @@ jobs:
       - name: Terraform Init (fis-experiment)
         id: init-fis
         if: inputs.environment == 'fis-experiment'
-        run: terraform init -input=false
+        run: terraform init -backend-config="profile=" -input=false
         working-directory: ${{ env.WORKING_DIR }}
 
       - name: Terraform Validate
