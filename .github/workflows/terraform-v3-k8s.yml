@@ -99,7 +99,9 @@ jobs:
             DESTROY_FLAG="-destroy"
           fi
           VAR_FLAGS=""
-          if [ "${{ inputs.environment }}" != "fis-experiment" ]; then
+          if [ "${{ inputs.environment }}" == "fis-experiment" ]; then
+            VAR_FLAGS="-var=vpc_id=${{ secrets.FIS_VPC_ID }} -var=igw_id=${{ secrets.FIS_IGW_ID }} -var=data_security_group_id=${{ secrets.FIS_DATA_SG_ID }}"
+          else
             VAR_FLAGS="-var=vpc_id=${{ secrets.K8S_DEV_VPC_ID }} -var=ssl_certificate_arn=${{ secrets.K8S_DEV_SSL_CERT_ARN }}"
           fi
           terraform plan \

@@ -5,7 +5,7 @@ variable "region" {
 
 variable "aws_profile" {
   type    = string
-  default = "default"
+  default = ""
 }
 
 variable "project_name" {
